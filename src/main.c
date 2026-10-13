@@ -11,7 +11,7 @@ static void usage(FILE *out)
 {
     fputs("usage: magips [-s] [--json] [--no-color]\n"
           "  (no option)  interactive: pick things and stop them\n"
-          "               j/k move  h/l section  / search  enter select  q quit\n"
+          "               j/k move  h/l section  / search  d stop  q quit\n"
           "  -s           print apps, services, dev servers, databases, containers, ports\n"
           "               (also used automatically when output isn't a terminal)\n"
           "  --json       everything as JSON, for scripts (includes hidden system ports)\n"

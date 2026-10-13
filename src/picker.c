@@ -354,7 +354,7 @@ static void draw(Picker *p)
     }
     printf(DIM "  %zu/%zu  %s" RESET, p->nshown, p->n,
            p->searching ? "type to filter  enter keep  esc clear"
-                        : "j/k move  h/l section  / search  enter select  q quit");
+                        : "j/k move  h/l section  / search  d stop  q quit");
     lines++;
 
     fflush(stdout);
@@ -449,7 +449,7 @@ int picker_run(const PickItem *items, size_t n, const char *const *tabs, int nta
             p.sel = p.nshown ? p.nshown - 1 : 0;
         } else if (key == '/') {
             p.searching = true;
-        } else if (key == KEY_ENTER) {
+        } else if (key == 'd') {                   // d = stop the selected thing
             if (p.nshown > 0) {
                 result = (int)p.shown[p.sel];
                 break;

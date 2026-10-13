@@ -15,7 +15,7 @@ typedef struct {
 
 /*
  * Picker drawn under the prompt, with vim-style keys:
- *   j/k move, h/l switch section, g/G top/bottom, Enter picks, q quits,
+ *   j/k move, h/l switch section, g/G top/bottom, d picks, q quits,
  *   / search (type to filter; Enter keeps the filter, Esc clears it).
  * Arrows, Tab/Shift-Tab and Ctrl-n/p work too. Erases itself when done.
  * *tab is the section to start on, and is updated to where the user left it.
