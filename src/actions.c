@@ -94,68 +94,68 @@ static Action service_action(Arena *a, const Service *s)
 }
 
 /* A port is stopped by stopping whatever owns it. false = owner unknown. */
-static bool port_action(Arena *a, const Snapshot *s, const PortSummary *p, Action *out,
+static bool port_action(Arena *a, const World *s, const PortSummary *p, Action *out,
                         const char **owner)
 {
     if (p->pid >= 0) {
-        for (size_t i = 0; i < s->apps->len; i++)
-            if (members_has(&s->apps->items[i].members, p->pid)) {
-                *out = app_action(&s->apps->items[i]);
-                *owner = s->apps->items[i].name;
+        for (size_t i = 0; i < s->apps.len; i++)
+            if (members_has(&s->apps.items[i].members, p->pid)) {
+                *out = app_action(&s->apps.items[i]);
+                *owner = s->apps.items[i].name;
                 return true;
             }
-        for (size_t i = 0; i < s->services->len; i++)
-            if (members_has(&s->services->items[i].members, p->pid)) {
-                *out = service_action(a, &s->services->items[i]);
-                *owner = s->services->items[i].name;
+        for (size_t i = 0; i < s->services.len; i++)
+            if (members_has(&s->services.items[i].members, p->pid)) {
+                *out = service_action(a, &s->services.items[i]);
+                *owner = s->services.items[i].name;
                 return true;
             }
         return false;
     }
-    int c = docker_find_port(s->containers, p->port);
+    int c = docker_find_port(&s->containers, p->port);
     if (c < 0)
         return false;
-    *out = container_action(a, &s->containers->items[c]);
-    *owner = arena_printf(a, "docker: %s", s->containers->items[c].name);
+    *out = container_action(a, &s->containers.items[c]);
+    *owner = arena_printf(a, "docker: %s", s->containers.items[c].name);
     return true;
 }
 
 /* A database is stopped like the thing running it. */
-static Action db_action(Arena *a, const Snapshot *s, const Database *d)
+static Action db_action(Arena *a, const World *s, const Database *d)
 {
     if (d->container >= 0)
-        return container_action(a, &s->containers->items[d->container]);
+        return container_action(a, &s->containers.items[d->container]);
     if (d->service)
         return service_action(a, d->service);
 
     Members *one = arena_alloc(a, sizeof *one);     // a lone process: just that pid
-    size_t i = tree_find(s->tree, d->pid);
+    size_t i = tree_find(&s->tree, d->pid);
     if (i != TREE_NONE)
-        members_add(a, one, &s->tree->procs->items[i]);
+        members_add(a, one, &s->tree.procs->items[i]);
     return (Action){ .kind = ACT_KILL, .what = d->engine, .members = one };
 }
 
-static Menu build_menu(Arena *a, const Snapshot *s)
+static Menu build_menu(Arena *a, const World *s)
 {
     Menu m = { 0 };
 
-    for (size_t i = 0; i < s->apps->len; i++) {
-        const App *app = &s->apps->items[i];
+    for (size_t i = 0; i < s->apps.len; i++) {
+        const App *app = &s->apps.items[i];
         PickItem item = { TAB_APPS, { app->name, "app", arena_printf(a, "%d", app->pid),
                           arena_printf(a, "%3zu procs", app->members.len),
                           format_mem(a, app->mem_kb) } };
         menu_add(a, &m, item, app_action(app));
     }
-    for (size_t i = 0; i < s->services->len; i++) {
-        const Service *sv = &s->services->items[i];
+    for (size_t i = 0; i < s->services.len; i++) {
+        const Service *sv = &s->services.items[i];
         PickItem item = { TAB_SERVICES, { sv->name, sv->scope == SCOPE_SYSTEM ? "system" : "user",
                           arena_printf(a, "%d", sv->pid),
                           arena_printf(a, "%3zu procs", sv->members.len),
                           format_mem(a, sv->mem_kb) } };
         menu_add(a, &m, item, service_action(a, sv));
     }
-    for (size_t i = 0; i < s->devservers->len; i++) {
-        const DevServer *d = &s->devservers->items[i];
+    for (size_t i = 0; i < s->devservers.len; i++) {
+        const DevServer *d = &s->devservers.items[i];
         PickItem item = { TAB_DEV, { d->project, d->orphaned ? "dev, orphaned" : "dev",
                           arena_printf(a, "%d", d->pid), arena_printf(a, ":%s", d->ports),
                           d->command } };
@@ -163,9 +163,9 @@ static Menu build_menu(Arena *a, const Snapshot *s)
                        .members = &d->members };
         menu_add(a, &m, item, act);
     }
-    for (size_t i = 0; i < s->databases->len; i++) {
-        const Database *d = &s->databases->items[i];
-        const char *where = d->container >= 0 ? s->containers->items[d->container].name
+    for (size_t i = 0; i < s->databases.len; i++) {
+        const Database *d = &s->databases.items[i];
+        const char *where = d->container >= 0 ? s->containers.items[d->container].name
                             : d->service      ? d->service->name
                                               : "process";
         PickItem item = { TAB_DATABASES, {
@@ -176,14 +176,14 @@ static Menu build_menu(Arena *a, const Snapshot *s)
             where } };
         menu_add(a, &m, item, db_action(a, s, d));
     }
-    for (size_t i = 0; i < s->containers->len; i++) {
-        const Container *c = &s->containers->items[i];
+    for (size_t i = 0; i < s->containers.len; i++) {
+        const Container *c = &s->containers.items[i];
         PickItem item = { TAB_CONTAINERS, { c->name, "container", "-", c->status, c->image } };
         menu_add(a, &m, item, container_action(a, c));
     }
 
-    PortSummary *sums = arena_alloc(a, (s->ports->len + 1) * sizeof *sums);
-    size_t n = ports_summarize(s->ports, sums);
+    PortSummary *sums = arena_alloc(a, (s->ports.len + 1) * sizeof *sums);
+    size_t n = ports_summarize(&s->ports, sums);
     for (size_t i = 0; i < n; i++) {
         Action act;
         const char *owner;
@@ -206,28 +206,28 @@ static void sleep_ms(long ms)
 }
 
 /* Does the group contain the terminal/shell we're running in? */
-static bool includes_my_terminal(const Snapshot *s, const Members *m)
+static bool includes_my_terminal(const World *s, const Members *m)
 {
-    size_t i = tree_find(s->tree, getpid());
-    for (i = i != TREE_NONE ? s->tree->parent[i] : TREE_NONE; i != TREE_NONE; i = s->tree->parent[i])
-        if (members_has(m, s->tree->procs->items[i].pid))
+    size_t i = tree_find(&s->tree, getpid());
+    for (i = i != TREE_NONE ? s->tree.parent[i] : TREE_NONE; i != TREE_NONE; i = s->tree.parent[i])
+        if (members_has(m, s->tree.procs->items[i].pid))
             return true;
     return false;
 }
 
-static size_t count_alive(const Snapshot *s, const Members *m, const bool *skip)
+static size_t count_alive(const Members *m, const bool *skip)
 {
     size_t alive = 0;
     for (size_t i = 0; i < m->len; i++)
-        if (!skip[i] && procfs_alive(s->proc_root, m->items[i].pid, m->items[i].start))
+        if (!skip[i] && procfs_alive(PROC_ROOT, m->items[i].pid, m->items[i].start))
             alive++;
     return alive;
 }
 
-static void signal_all(const Snapshot *s, const Members *m, const bool *skip, int sig)
+static void signal_all(const Members *m, const bool *skip, int sig)
 {
     for (size_t i = 0; i < m->len; i++)
-        if (!skip[i] && procfs_alive(s->proc_root, m->items[i].pid, m->items[i].start))
+        if (!skip[i] && procfs_alive(PROC_ROOT, m->items[i].pid, m->items[i].start))
             kill(m->items[i].pid, sig);
 }
 
@@ -235,7 +235,7 @@ static void signal_all(const Snapshot *s, const Members *m, const bool *skip, in
  * SIGTERM asks politely (apps can save and clean up). If something is still
  * there after a few seconds, offer SIGKILL, which can't be ignored.
  */
-static int do_kill(Arena *a, const Snapshot *s, const Action *act)
+static int do_kill(Arena *a, const Action *act)
 {
     const Members *m = act->members;
     bool *skip = arena_alloc(a, (m->len + 1) * sizeof *skip);
@@ -244,7 +244,7 @@ static int do_kill(Arena *a, const Snapshot *s, const Action *act)
 
     for (size_t i = 0; i < m->len; i++) {
         const Member *mb = &m->items[i];
-        if (mb->pid == getpid() || !procfs_alive(s->proc_root, mb->pid, mb->start)) {
+        if (mb->pid == getpid() || !procfs_alive(PROC_ROOT, mb->pid, mb->start)) {
             skip[i] = true;
             continue;
         }
@@ -258,16 +258,16 @@ static int do_kill(Arena *a, const Snapshot *s, const Action *act)
         }
     }
 
-    size_t alive = count_alive(s, m, skip);
+    size_t alive = count_alive(m, skip);
     for (long waited = 0; alive > 0 && waited < TERM_WAIT_MS; waited += 100) {
         sleep_ms(100);
-        alive = count_alive(s, m, skip);
+        alive = count_alive(m, skip);
     }
     if (alive > 0 && picker_confirm(arena_printf(a, "%zu process%s still running. Force kill?",
                                                  alive, alive == 1 ? "" : "es"))) {
-        signal_all(s, m, skip, SIGKILL);
+        signal_all(m, skip, SIGKILL);
         sleep_ms(200);
-        alive = count_alive(s, m, skip);
+        alive = count_alive(m, skip);
     }
 
     if (alive == 0)
@@ -301,7 +301,7 @@ static int do_run(const Action *act)
     return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
 }
 
-PickResult actions_pick(Arena *a, const Snapshot *s, int *tab)
+PickResult actions_pick(Arena *a, const World *s, int *tab)
 {
     Menu m = build_menu(a, s);
     int choice = picker_run(m.items, m.len, tabs, NTABS, tab);
@@ -325,7 +325,7 @@ PickResult actions_pick(Arena *a, const Snapshot *s, int *tab)
                                ? "\n  ⚠ this includes the terminal you're typing in." : "";
         if (picker_confirm(arena_printf(a, "Stop %s (%zu process%s)?%s", act->what, n,
                                         n == 1 ? "" : "es", warn)))
-            do_kill(a, s, act);
+            do_kill(a, act);
         break;
     }
     }
