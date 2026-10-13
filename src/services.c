@@ -43,7 +43,8 @@ static void add(Arena *a, ServiceList *list, size_t *cap, const char *name, Scop
         if (s->scope == scope && s->unit == unit && strcmp(s->name, name) == 0) {
             members_append(a, &s->members, members);
             s->mem_kb += mem;
-            if (main->start < s->start) {
+            // the group's main process: first started (lower pid on a tie)
+            if (main->start < s->start || (main->start == s->start && main->pid < s->pid)) {
                 s->pid = main->pid;
                 s->start = main->start;
             }

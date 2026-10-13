@@ -11,7 +11,12 @@
 #include "tree.h"
 #include "util.h"
 
-#define PROC_ROOT "/proc"
+/*
+ * Where processes are read from: /proc, or $MAGIPS_PROC for tests and demos
+ * (a fake /proc). With a fake one, nothing is ever really killed.
+ */
+const char *proc_root(void);
+bool proc_is_fake(void);
 
 /* Everything one scan finds. Lives in one arena, freed together. */
 typedef struct {

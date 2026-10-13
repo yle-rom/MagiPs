@@ -1,5 +1,37 @@
+#include <stdlib.h>
+#include <sys/stat.h>
 #include "procfs.h"
 #include "test.h"
+
+/* A fake /proc with one process, to check "killing" on a fake root. */
+static void test_mark_dead(Arena *a)
+{
+    char root[] = "/tmp/magips-test-XXXXXX";
+    if (!mkdtemp(root))
+        return;
+    char path[256];
+    snprintf(path, sizeof path, "%s/7", root);
+    mkdir(path, 0755);
+    snprintf(path, sizeof path, "%s/7/stat", root);
+    FILE *f = fopen(path, "w");
+    fputs("7 (x) S 1 0 7 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5 0 0\n", f);
+    fclose(f);
+    snprintf(path, sizeof path, "%s/7/status", root);
+    f = fopen(path, "w");
+    fputs("Uid:\t1000\t1000\t1000\t1000\n", f);
+    fclose(f);
+
+    CHECK(procfs_scan(a, root).len == 1);
+    CHECK(procfs_alive(root, 7, 5));
+    procfs_mark_dead(root, 7);
+    CHECK(procfs_scan(a, root).len == 0);           // the scan skips it now
+    CHECK(!procfs_alive(root, 7, 5));
+
+    char cmd[300];
+    snprintf(cmd, sizeof cmd, "rm -r '%s'", root);
+    if (system(cmd) != 0)
+        fprintf(stderr, "could not remove %s\n", root);
+}
 
 static const Proc *find(const ProcList *l, int pid)
 {
@@ -53,5 +85,6 @@ void test_procfs(void)
     CHECK(!procfs_alive(FIXTURE_PROC, 200, 99));    // same pid, different process
     CHECK(!procfs_alive(FIXTURE_PROC, 12345, 20));  // gone
     CHECK(procfs_scan(a, "tests/fixtures/missing").len == 0);
+    test_mark_dead(a);
     arena_free(a);
 }

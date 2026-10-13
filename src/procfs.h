@@ -28,6 +28,9 @@ ProcList procfs_scan(Arena *a, const char *root);
 /* Seconds since boot, from <root>/uptime. Proc.start / CLK_TCK is on the same clock. */
 double procfs_uptime(const char *root);
 
+/* Fake /proc only: record pid as dead in <root>/dead, so scans skip it. */
+void procfs_mark_dead(const char *root, int pid);
+
 /* Is pid still the same process (same start time) and not a zombie? */
 bool procfs_alive(const char *root, int pid, unsigned long long start);
 

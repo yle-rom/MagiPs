@@ -1,15 +1,27 @@
 #include "world.h"
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include "config.h"
 #include "desktop.h"
+
+const char *proc_root(void)
+{
+    const char *fake = getenv("MAGIPS_PROC");
+    return fake && *fake ? fake : "/proc";
+}
+
+bool proc_is_fake(void)
+{
+    return strcmp(proc_root(), "/proc") != 0;
+}
 
 void world_scan(Arena *a, World *w)
 {
     int uid = (int)getuid();
     Config cfg = config_load(a);
-    w->procs = procfs_scan(a, PROC_ROOT);
-    w->uptime = procfs_uptime(PROC_ROOT);
+    w->procs = procfs_scan(a, proc_root());
+    w->uptime = procfs_uptime(proc_root());
     w->tree = tree_build(a, &w->procs);
 
     // order matters: apps claim their processes first, services take the rest
@@ -19,9 +31,9 @@ void world_scan(Arena *a, World *w)
     w->apps = apps_build(a, &w->tree, &desk, uid);
     w->services = services_build(a, &w->tree, uid, &cfg);
     w->containers = docker_list(a);
-    w->ports = ports_scan(a, PROC_ROOT, &w->procs);
+    w->ports = ports_scan(a, proc_root(), &w->procs);
     w->databases = db_find(a, &w->tree, &w->services, &w->containers, &w->ports);
-    w->devservers = dev_find(a, &w->tree, &w->apps, &w->ports, PROC_ROOT, uid, getenv("HOME"));
+    w->devservers = dev_find(a, &w->tree, &w->apps, &w->ports, proc_root(), uid, getenv("HOME"));
 }
 
 long world_age(unsigned long long start, double uptime)

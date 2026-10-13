@@ -228,16 +228,28 @@ static size_t count_alive(const Members *m, const bool *skip)
 {
     size_t alive = 0;
     for (size_t i = 0; i < m->len; i++)
-        if (!skip[i] && procfs_alive(PROC_ROOT, m->items[i].pid, m->items[i].start))
+        if (!skip[i] && procfs_alive(proc_root(), m->items[i].pid, m->items[i].start))
             alive++;
     return alive;
+}
+
+/*
+ * kill(), except on a fake /proc (demo/tests): a fake pid could be a real
+ * process here, so instead the process is only marked dead in the fake tree.
+ */
+static int send_signal(int pid, int sig)
+{
+    if (!proc_is_fake())
+        return kill(pid, sig);
+    procfs_mark_dead(proc_root(), pid);
+    return 0;
 }
 
 static void signal_all(const Members *m, const bool *skip, int sig)
 {
     for (size_t i = 0; i < m->len; i++)
-        if (!skip[i] && procfs_alive(PROC_ROOT, m->items[i].pid, m->items[i].start))
-            kill(m->items[i].pid, sig);
+        if (!skip[i] && procfs_alive(proc_root(), m->items[i].pid, m->items[i].start))
+            send_signal(m->items[i].pid, sig);
 }
 
 /*
@@ -253,11 +265,11 @@ static int do_kill(Arena *a, const Action *act)
 
     for (size_t i = 0; i < m->len; i++) {
         const Member *mb = &m->items[i];
-        if (mb->pid == getpid() || !procfs_alive(PROC_ROOT, mb->pid, mb->start)) {
+        if (mb->pid == getpid() || !procfs_alive(proc_root(), mb->pid, mb->start)) {
             skip[i] = true;
             continue;
         }
-        if (kill(mb->pid, SIGTERM) < 0) {
+        if (send_signal(mb->pid, SIGTERM) < 0) {
             skip[i] = true;
             if (errno == EPERM) {                   // e.g. a root helper inside the app
                 size_t len = strlen(denied);

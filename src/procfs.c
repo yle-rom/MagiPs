@@ -166,6 +166,32 @@ static char *read_cgroup(Arena *a, const char *root, int pid)
     return arena_strdup(a, found);
 }
 
+/* Fake /proc (demo): pids "killed" so far, one per line in <root>/dead. */
+static bool is_marked_dead(const char *root, int pid)
+{
+    char path[512], line[32];
+    snprintf(path, sizeof path, "%s/dead", root);
+    FILE *f = fopen(path, "r");                     // never exists in the real /proc
+    if (!f)
+        return false;
+    bool dead = false;
+    while (!dead && fgets(line, sizeof line, f))
+        dead = atoi(line) == pid;
+    fclose(f);
+    return dead;
+}
+
+void procfs_mark_dead(const char *root, int pid)
+{
+    char path[512];
+    snprintf(path, sizeof path, "%s/dead", root);
+    FILE *f = fopen(path, "a");
+    if (f) {
+        fprintf(f, "%d\n", pid);
+        fclose(f);
+    }
+}
+
 ProcList procfs_scan(Arena *a, const char *root)
 {
     ProcList list = { 0 };
@@ -182,7 +208,8 @@ ProcList procfs_scan(Arena *a, const char *root)
             continue;
 
         Proc p = { 0 };
-        if (parse_stat(root, pid, &p) < 0 || parse_status(root, pid, &p) < 0)
+        if (is_marked_dead(root, pid) || parse_stat(root, pid, &p) < 0 ||
+            parse_status(root, pid, &p) < 0)
             continue;                   // vanished mid-scan: skip
         p.cmdline = read_cmdline(a, root, pid);
         p.exe = read_exe(a, root, pid);
@@ -215,7 +242,7 @@ double procfs_uptime(const char *root)
 bool procfs_alive(const char *root, int pid, unsigned long long start)
 {
     Proc p = { 0 };
-    if (parse_stat(root, pid, &p) < 0)
+    if (is_marked_dead(root, pid) || parse_stat(root, pid, &p) < 0)
         return false;
     return p.start == start && p.state != 'Z' && p.state != 'X';
 }
