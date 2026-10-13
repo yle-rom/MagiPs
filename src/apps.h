@@ -9,7 +9,7 @@
 typedef struct {
     const char *name;           // "Firefox", or "Alacritty → nvim" for terminals
     int pid;                    // top-level process (kill this)
-    size_t nprocs;              // root + all descendants
+    Members members;            // root(s) + all descendants: what a kill stops
     long mem_kb;                // summed rss
     unsigned long long start;   // clock ticks since boot
     const DesktopEntry *entry;

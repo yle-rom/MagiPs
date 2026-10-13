@@ -1,8 +1,9 @@
-#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 
+#include "actions.h"
 #include "apps.h"
 #include "desktop.h"
 #include "docker.h"
@@ -15,38 +16,18 @@
 
 #define PROC_ROOT "/proc"
 
-/* printf into a new arena string. */
-static const char *fmt(Arena *a, const char *format, ...)
-{
-    char buf[256];
-    va_list args;
-    va_start(args, format);
-    vsnprintf(buf, sizeof buf, format, args);
-    va_end(args);
-    return arena_strdup(a, buf);
-}
-
-static const char *fmt_mem(Arena *a, long kb)
-{
-    if (kb >= 1024 * 1024)
-        return fmt(a, "%.1fG", kb / (1024.0 * 1024.0));
-    if (kb >= 1024)
-        return fmt(a, "%ldM", kb / 1024);
-    return fmt(a, "%ldK", kb);
-}
-
 /* How long ago a process started: "2d4h", "3h12m", "22m", "40s". */
-static const char *fmt_age(Arena *a, unsigned long long start, double uptime)
+static const char *format_age(Arena *a, unsigned long long start, double uptime)
 {
     long secs = (long)(uptime - (double)start / (double)sysconf(_SC_CLK_TCK));
     long m = secs / 60, h = m / 60, d = h / 24;
     if (d)
-        return fmt(a, "%ldd%ldh", d, h % 24);
+        return arena_printf(a, "%ldd%ldh", d, h % 24);
     if (h)
-        return fmt(a, "%ldh%02ldm", h, m % 60);
+        return arena_printf(a, "%ldh%02ldm", h, m % 60);
     if (m)
-        return fmt(a, "%ldm", m);
-    return fmt(a, "%lds", secs < 0 ? 0 : secs);
+        return arena_printf(a, "%ldm", m);
+    return arena_printf(a, "%lds", secs < 0 ? 0 : secs);
 }
 
 static void print_apps(Arena *a, const AppList *apps, double uptime)
@@ -57,10 +38,10 @@ static void print_apps(Arena *a, const AppList *apps, double uptime)
         const App *app = &apps->items[i];
         const char *row[] = {
             app->name,
-            fmt(a, "%d", app->pid),
-            fmt(a, "%zu", app->nprocs),
-            fmt_mem(a, app->mem_kb),
-            fmt_age(a, app->start, uptime),
+            arena_printf(a, "%d", app->pid),
+            arena_printf(a, "%zu", app->members.len),
+            format_mem(a, app->mem_kb),
+            format_age(a, app->start, uptime),
         };
         table_row(t, row);
     }
@@ -76,10 +57,10 @@ static void print_services(Arena *a, const ServiceList *services, double uptime)
         const char *row[] = {
             s->name,
             s->scope == SCOPE_SYSTEM ? "system" : "user",
-            fmt(a, "%d", s->pid),
-            fmt(a, "%zu", s->nprocs),
-            fmt_mem(a, s->mem_kb),
-            fmt_age(a, s->start, uptime),
+            arena_printf(a, "%d", s->pid),
+            arena_printf(a, "%zu", s->members.len),
+            format_mem(a, s->mem_kb),
+            format_age(a, s->start, uptime),
         };
         table_row(t, row);
     }
@@ -98,61 +79,68 @@ static void print_containers(Arena *a, const ContainerList *containers)
     table_print(t);
 }
 
-/*
- * One row per port number (tcp + tcp6, several addresses -> merged).
- * Ports we can't attribute to a process or container are system plumbing:
- * hidden, only counted.
- */
+/* Who owns a port: the process if we can see it, else a container publishing it. */
+static const char *port_owner(Arena *a, const PortSummary *p, const Tree *tree,
+                              const ContainerList *containers)
+{
+    if (p->pid >= 0) {
+        size_t i = tree_find(tree, p->pid);
+        return i != TREE_NONE ? tree->procs->items[i].comm : "?";
+    }
+    int c = docker_find_port(containers, p->port);
+    return c >= 0 ? arena_printf(a, "docker: %s", containers->items[c].name) : NULL;
+}
+
+/* Ports nobody visible owns are system plumbing: hidden, only counted. */
 static void print_ports(Arena *a, const PortList *ports, const Tree *tree,
                         const ContainerList *containers)
 {
     const char *cols[] = { "PORT", "OPEN TO", "PID", "OWNER" };
     Table *t = table_new(a, "PORTS", 4, cols);
-    size_t hidden = 0;
+    PortSummary *sums = arena_alloc(a, (ports->len + 1) * sizeof *sums);
+    size_t n = ports_summarize(ports, sums), hidden = 0;
 
-    for (size_t i = 0; i < ports->len;) {
-        int port = ports->items[i].port;
-        int pid = -1;
-        bool network = false, local = true;
-        const char *addr = NULL;
-        for (; i < ports->len && ports->items[i].port == port; i++) {      // sorted by port
-            const Port *p = &ports->items[i];
-            if (pid < 0)
-                pid = p->pid;
-            Reach r = port_reach(p);
-            network |= r == REACH_NETWORK;
-            local &= r == REACH_LOCAL;
-            if (r == REACH_ADDRESS && !addr)
-                addr = p->addr;
-        }
-
-        const char *owner = NULL;
-        if (pid >= 0) {
-            size_t idx = tree_find(tree, pid);
-            owner = idx != TREE_NONE ? tree->procs->items[idx].comm : "?";
-        } else {
-            int c = docker_find_port(containers, port);
-            if (c >= 0)
-                owner = fmt(a, "docker: %s", containers->items[c].name);
-        }
+    for (size_t i = 0; i < n; i++) {
+        const char *owner = port_owner(a, &sums[i], tree, containers);
         if (!owner) {
             hidden++;
             continue;
         }
-
         const char *row[] = {
-            fmt(a, "%d", port),
-            network ? "network" : local ? "this pc" : addr,
-            pid >= 0 ? fmt(a, "%d", pid) : "-",
+            arena_printf(a, "%d", sums[i].port),
+            port_reach_label(&sums[i]),
+            sums[i].pid >= 0 ? arena_printf(a, "%d", sums[i].pid) : "-",
             owner,
         };
         table_row(t, row);
     }
-    table_print_note(t, hidden ? fmt(a, "(%zu system ports hidden)", hidden) : NULL);
+    table_print_note(t, hidden ? arena_printf(a, "(%zu system ports hidden)", hidden) : NULL);
 }
 
-int main(void)
+static void usage(FILE *out)
 {
+    fputs("usage: whatsup [-i]\n"
+          "  (no option)  print apps, services, containers and ports\n"
+          "  -i           interactive: pick something and stop it\n"
+          "  -h           this help\n", out);
+}
+
+int main(int argc, char **argv)
+{
+    bool interactive = false;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--interactive") == 0) {
+            interactive = true;
+        } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            usage(stdout);
+            return 0;
+        } else {
+            fprintf(stderr, "whatsup: unknown option '%s'\n", argv[i]);
+            usage(stderr);
+            return 2;
+        }
+    }
+
     Arena *a = arena_new(1 << 16);     // 64 KB blocks
     int uid = (int)getuid();
 
@@ -167,11 +155,17 @@ int main(void)
     ContainerList containers = docker_list(a);
     PortList ports = ports_scan(a, PROC_ROOT, &procs);
 
-    print_apps(a, &apps, uptime);
-    print_services(a, &services, uptime);
-    print_containers(a, &containers);
-    print_ports(a, &ports, &tree, &containers);
+    int status = 0;
+    if (interactive) {
+        Snapshot snap = { &apps, &services, &containers, &ports, &tree, PROC_ROOT };
+        status = actions_interactive(a, &snap);
+    } else {
+        print_apps(a, &apps, uptime);
+        print_services(a, &services, uptime);
+        print_containers(a, &containers);
+        print_ports(a, &ports, &tree, &containers);
+    }
 
     arena_free(a);
-    return 0;
+    return status;
 }

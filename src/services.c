@@ -62,12 +62,12 @@ static bool unit_name(const char *cgroup, char *out, size_t size)
 
 /* Add a group to the list, or merge into an existing one with the same name. */
 static void add(Arena *a, ServiceList *list, size_t *cap, const char *name, Scope scope,
-                const Proc *main, size_t nprocs, long mem)
+                bool unit, const Proc *main, const Members *members, long mem)
 {
     for (size_t i = 0; i < list->len; i++) {
         Service *s = &list->items[i];
-        if (s->scope == scope && strcmp(s->name, name) == 0) {
-            s->nprocs += nprocs;
+        if (s->scope == scope && s->unit == unit && strcmp(s->name, name) == 0) {
+            members_append(a, &s->members, members);
             s->mem_kb += mem;
             if (main->start < s->start) {
                 s->pid = main->pid;
@@ -81,28 +81,29 @@ static void add(Arena *a, ServiceList *list, size_t *cap, const char *name, Scop
     list->items[list->len++] = (Service){
         .name = arena_strdup(a, name),
         .scope = scope,
+        .unit = unit,
         .pid = main->pid,
-        .nprocs = nprocs,
+        .members = *members,
         .mem_kb = mem,
         .start = main->start,
     };
 }
 
-/* Claim only i itself (unit members are counted one by one). */
-static void claim_one(Tree *t, size_t i, Owner owner, size_t *nprocs, long *mem)
+/* Claim only i itself (unit members are collected one by one). */
+static void claim_one(Arena *a, Tree *t, size_t i, Members *m, long *mem)
 {
-    t->owner[i] = owner;
-    *nprocs += 1;
+    t->owner[i] = OWNER_SERVICE;
+    members_add(a, m, &t->procs->items[i]);
     *mem += t->procs->items[i].rss_kb;
 }
 
 /* Claim i and descendants, but stop at processes that start their own group. */
-static void claim_group(Tree *t, size_t i, const bool *is_root, size_t *nprocs, long *mem)
+static void claim_group(Arena *a, Tree *t, size_t i, const bool *is_root, Members *m, long *mem)
 {
-    claim_one(t, i, OWNER_SERVICE, nprocs, mem);
+    claim_one(a, t, i, m, mem);
     for (size_t c = t->first_child[i]; c != TREE_NONE; c = t->next_sibling[c])
         if (t->owner[c] == OWNER_FREE && !is_root[c])
-            claim_group(t, c, is_root, nprocs, mem);
+            claim_group(a, t, c, is_root, m, mem);
 }
 
 static int cmp_service(const void *x, const void *y)
@@ -138,10 +139,10 @@ ServiceList services_build(Arena *a, Tree *t, int uid)
             t->owner[i] = OWNER_HIDDEN;
             continue;
         }
-        size_t one = 0;
+        Members one = { 0 };
         long mem = 0;
-        claim_one(t, i, OWNER_SERVICE, &one, &mem);
-        add(a, &list, &cap, unit, scope, p, one, mem);
+        claim_one(a, t, i, &one, &mem);
+        add(a, &list, &cap, unit, scope, true, p, &one, mem);
     }
 
     // pass 2: your remaining processes (session scope), grouped by tree.
@@ -169,11 +170,11 @@ ServiceList services_build(Arena *a, Tree *t, int uid)
         if (!is_root[i] || t->owner[i] != OWNER_FREE)
             continue;
         const Proc *p = &procs->items[i];
-        size_t nprocs = 0;
+        Members members = { 0 };
         long mem = 0;
-        claim_group(t, i, is_root, &nprocs, &mem);
+        claim_group(a, t, i, is_root, &members, &mem);
         if (!is_essential(p->comm, SCOPE_USER))
-            add(a, &list, &cap, p->comm, SCOPE_USER, p, nprocs, mem);
+            add(a, &list, &cap, p->comm, SCOPE_USER, false, p, &members, mem);
     }
 
     // pass 3: no systemd (Alpine, Void...): other users' processes under PID 1
@@ -182,11 +183,11 @@ ServiceList services_build(Arena *a, Tree *t, int uid)
         if (t->owner[i] != OWNER_FREE || p->uid == uid || p->ppid != 1 ||
             strstr(p->cgroup, ".slice"))
             continue;
-        size_t nprocs = 0;
+        Members members = { 0 };
         long mem = 0;
-        tree_claim(t, i, OWNER_SERVICE, &nprocs, &mem);
+        tree_claim(a, t, i, OWNER_SERVICE, &members, &mem);
         if (!is_essential(p->comm, SCOPE_SYSTEM))
-            add(a, &list, &cap, p->comm, SCOPE_SYSTEM, p, nprocs, mem);
+            add(a, &list, &cap, p->comm, SCOPE_SYSTEM, false, p, &members, mem);
     }
 
     qsort(list.items, list.len, sizeof *list.items, cmp_service);

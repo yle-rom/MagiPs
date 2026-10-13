@@ -27,6 +27,20 @@ typedef enum {
 
 Reach port_reach(const Port *p);
 
+/* One listening port number, merged over tcp/tcp6 and all its addresses. */
+typedef struct {
+    int port;
+    int pid;                    // -1 if unknown
+    Reach reach;                // NETWORK if any address is open to the network
+    const char *addr;           // the address, when reach == REACH_ADDRESS
+} PortSummary;
+
+/* Merge a sorted PortList into out (room for in->len). Returns the count. */
+size_t ports_summarize(const PortList *in, PortSummary *out);
+
+/* "network", "this pc", or the specific address. */
+const char *port_reach_label(const PortSummary *s);
+
 /*
  * Listening TCP sockets from <root>/net/tcp{,6}. The owner is found by
  * looking for "socket:[inode]" among each process's open files (<root>/<pid>/fd).

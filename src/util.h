@@ -22,4 +22,11 @@ void *arena_grow(Arena *a, void *items, size_t len, size_t *cap, size_t elem_siz
 /* "/usr/bin/firefox" -> "firefox" */
 const char *path_base(const char *path);
 
+/* printf into a new arena string (cut at 1 KB). */
+const char *arena_printf(Arena *a, const char *format, ...)
+    __attribute__((format(printf, 2, 3)));   // lets the compiler check the arguments
+
+/* 1536 -> "1M", 5400000 -> "5.1G" */
+const char *format_mem(Arena *a, long kb);
+
 #endif

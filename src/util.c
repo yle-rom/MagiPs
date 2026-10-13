@@ -1,4 +1,5 @@
 #include "util.h"
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -84,4 +85,23 @@ const char *path_base(const char *path)
 {
     const char *slash = strrchr(path, '/');
     return slash ? slash + 1 : path;
+}
+
+const char *arena_printf(Arena *a, const char *format, ...)
+{
+    char buf[1024];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buf, sizeof buf, format, args);
+    va_end(args);
+    return arena_strdup(a, buf);
+}
+
+const char *format_mem(Arena *a, long kb)
+{
+    if (kb >= 1024 * 1024)
+        return arena_printf(a, "%.1fG", kb / (1024.0 * 1024.0));
+    if (kb >= 1024)
+        return arena_printf(a, "%ldM", kb / 1024);
+    return arena_printf(a, "%ldK", kb);
 }

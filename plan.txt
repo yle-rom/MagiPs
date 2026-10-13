@@ -58,8 +58,11 @@ STAGES
        1g docker         `docker ps --format` via popen  [done]
        1h table          aligned columns  [done]
        1i tests          fixture /proc + assert harness  [done]
-  2. kill                proc kill <pid|name|port>, whole tree,
-                         TERM -> KILL, confirm, protect PID 1/shell
+  2. interactive         whatsup -i: inline picker (type to filter, tab =
+                         section), stop the right way per kind:
+                         apps/own services: TERM -> KILL, whole group
+                         containers: docker stop, user units: systemctl --user
+                         system services: show the sudo command      [done]
   3. databases           name + port + image detection,
                          kill via systemctl / docker stop
   4. polish              --json, --sort, --all, find <name>, colors,

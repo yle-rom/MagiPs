@@ -1,6 +1,7 @@
 #include "ports.h"
 #include <arpa/inet.h>
 #include <dirent.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -165,4 +166,35 @@ Reach port_reach(const Port *p)
     if (strncmp(p->addr, "127.", 4) == 0 || strcmp(p->addr, "::1") == 0)
         return REACH_LOCAL;
     return REACH_ADDRESS;
+}
+
+size_t ports_summarize(const PortList *in, PortSummary *out)
+{
+    size_t n = 0;
+    for (size_t i = 0; i < in->len;) {
+        PortSummary sum = { .port = in->items[i].port, .pid = -1, .reach = REACH_LOCAL };
+        bool network = false, local = true;
+        for (; i < in->len && in->items[i].port == sum.port; i++) {     // sorted by port
+            const Port *p = &in->items[i];
+            if (sum.pid < 0)
+                sum.pid = p->pid;
+            Reach r = port_reach(p);
+            network |= r == REACH_NETWORK;
+            local &= r == REACH_LOCAL;
+            if (r == REACH_ADDRESS && !sum.addr)
+                sum.addr = p->addr;
+        }
+        sum.reach = network ? REACH_NETWORK : local ? REACH_LOCAL : REACH_ADDRESS;
+        out[n++] = sum;
+    }
+    return n;
+}
+
+const char *port_reach_label(const PortSummary *s)
+{
+    switch (s->reach) {
+    case REACH_NETWORK: return "network";
+    case REACH_LOCAL:   return "this pc";
+    default:            return s->addr;
+    }
 }

@@ -23,23 +23,23 @@ void test_apps_services(void)
     if (apps.len == 2) {
         CHECK_STR(apps.items[0].name, "My App");    // biggest memory first
         CHECK(apps.items[0].pid == 200);
-        CHECK(apps.items[0].nprocs == 2);           // child with the weird name rolled up
+        CHECK(apps.items[0].members.len == 2);           // child with the weird name rolled up
         CHECK(apps.items[0].mem_kb == 1500);
         CHECK_STR(apps.items[1].name, "Term → nvim");
-        CHECK(apps.items[1].nprocs == 3);
+        CHECK(apps.items[1].members.len == 3);
     }
 
     ServiceList services = services_build(a, &tree, FIXTURE_UID);
     CHECK(services.len == 5);
 
     const Service *s = find_service(&services, "docker");
-    CHECK(s && s->scope == SCOPE_SYSTEM && s->pid == 600);
+    CHECK(s && s->scope == SCOPE_SYSTEM && s->pid == 600 && s->unit);
     s = find_service(&services, "pipewire");
     CHECK(s && s->scope == SCOPE_USER);
     s = find_service(&services, "bar");
-    CHECK(s && s->nprocs == 2);                     // python3 child rolled up
+    CHECK(s && s->members.len == 2 && !s->unit);                     // python3 child rolled up
     s = find_service(&services, "compositor");
-    CHECK(s && s->nprocs == 1);                     // launcher: children are separate
+    CHECK(s && s->members.len == 1);                     // launcher: children are separate
     CHECK(find_service(&services, "notify") != NULL);
 
     CHECK(find_service(&services, "dbus") == NULL);         // essential

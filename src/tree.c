@@ -50,13 +50,37 @@ bool tree_is_kernel(const Proc *p)
     return p->pid == 2 || p->ppid == 2;
 }
 
-void tree_claim(Tree *t, size_t i, Owner owner, size_t *nprocs, long *mem_kb)
+void members_add(Arena *a, Members *m, const Proc *p)
+{
+    if (m->len == m->cap)
+        m->items = arena_grow(a, m->items, m->len, &m->cap, sizeof *m->items);
+    m->items[m->len++] = (Member){ p->pid, p->start };
+}
+
+void members_append(Arena *a, Members *dst, const Members *src)
+{
+    for (size_t i = 0; i < src->len; i++) {
+        if (dst->len == dst->cap)
+            dst->items = arena_grow(a, dst->items, dst->len, &dst->cap, sizeof *dst->items);
+        dst->items[dst->len++] = src->items[i];
+    }
+}
+
+bool members_has(const Members *m, int pid)
+{
+    for (size_t i = 0; i < m->len; i++)
+        if (m->items[i].pid == pid)
+            return true;
+    return false;
+}
+
+void tree_claim(Arena *a, Tree *t, size_t i, Owner owner, Members *m, long *mem_kb)
 {
     if (t->owner[i] != OWNER_FREE)
         return;
     t->owner[i] = owner;
-    *nprocs += 1;
+    members_add(a, m, &t->procs->items[i]);
     *mem_kb += t->procs->items[i].rss_kb;
     for (size_t c = t->first_child[i]; c != TREE_NONE; c = t->next_sibling[c])
-        tree_claim(t, c, owner, nprocs, mem_kb);
+        tree_claim(a, t, c, owner, m, mem_kb);
 }

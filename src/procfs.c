@@ -51,13 +51,13 @@ static int parse_stat(const char *root, int pid, Proc *p)
 
     // fields after ')': 3=state 4=ppid ... 22=starttime
     int got = sscanf(close + 2,
-                     "%*c %d"                       // state, ppid
+                     "%c %d"                        // state, ppid
                      " %*s %*s %*s %*s %*s %*s"     // 5-10
                      " %*s %*s %*s %*s %*s %*s"     // 11-16
                      " %*s %*s %*s %*s %*s"         // 17-21
                      " %llu",                       // starttime
-                     &p->ppid, &p->start);
-    if (got != 2)
+                     &p->state, &p->ppid, &p->start);
+    if (got != 3)
         return -1;
 
     p->pid = pid;
@@ -210,4 +210,12 @@ double procfs_uptime(const char *root)
         fclose(f);
     }
     return up;
+}
+
+bool procfs_alive(const char *root, int pid, unsigned long long start)
+{
+    Proc p = { 0 };
+    if (parse_stat(root, pid, &p) < 0)
+        return false;
+    return p.start == start && p.state != 'Z' && p.state != 'X';
 }

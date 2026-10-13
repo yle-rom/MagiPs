@@ -21,6 +21,21 @@ typedef struct {
     size_t idx;
 } TreePid;
 
+/* A process in a group. start time tells a reused pid apart from the original. */
+typedef struct {
+    int pid;
+    unsigned long long start;
+} Member;
+
+typedef struct {
+    Member *items;
+    size_t len, cap;
+} Members;
+
+void members_add(Arena *a, Members *m, const Proc *p);
+void members_append(Arena *a, Members *dst, const Members *src);
+bool members_has(const Members *m, int pid);
+
 /*
  * Parent/child links over a ProcList, all by index into procs->items.
  * Children of i: for (c = first_child[i]; c != TREE_NONE; c = next_sibling[c])
@@ -44,8 +59,8 @@ bool tree_is_kernel(const Proc *p);
 
 /*
  * Give i and all its still-free descendants to owner.
- * Adds the number of processes and their memory to *nprocs / *mem_kb.
+ * Adds them to *m and their memory to *mem_kb.
  */
-void tree_claim(Tree *t, size_t i, Owner owner, size_t *nprocs, long *mem_kb);
+void tree_claim(Arena *a, Tree *t, size_t i, Owner owner, Members *m, long *mem_kb);
 
 #endif

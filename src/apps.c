@@ -59,9 +59,9 @@ AppList apps_build(Arena *a, Tree *t, const DesktopIndex *d, int uid)
             continue;
 
         const Proc *p = &procs->items[i];
-        size_t nprocs = 0;
+        Members members = { 0 };
         long mem = 0;
-        tree_claim(t, i, OWNER_APP, &nprocs, &mem);
+        tree_claim(a, t, i, OWNER_APP, &members, &mem);
 
         // same app started twice (spotify has 2 roots): one row.
         // terminals stay separate: each window runs something different.
@@ -70,7 +70,7 @@ AppList apps_build(Arena *a, Tree *t, const DesktopIndex *d, int uid)
             if (list.items[j].entry == match[i])
                 same = &list.items[j];
         if (same) {
-            same->nprocs += nprocs;
+            members_append(a, &same->members, &members);
             same->mem_kb += mem;
             if (p->start < same->start) {
                 same->pid = p->pid;
@@ -85,7 +85,7 @@ AppList apps_build(Arena *a, Tree *t, const DesktopIndex *d, int uid)
             .name = match[i]->terminal ? terminal_label(a, t, i, match[i]->name)
                                        : match[i]->name,
             .pid = p->pid,
-            .nprocs = nprocs,
+            .members = members,
             .mem_kb = mem,
             .start = p->start,
             .entry = match[i],

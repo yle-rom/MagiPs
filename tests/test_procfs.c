@@ -23,6 +23,7 @@ void test_procfs(void)
         CHECK(app->uid == 1000);
         CHECK(app->rss_kb == 1000);
         CHECK(app->start == 20);
+        CHECK(app->state == 'S');
         CHECK_STR(app->comm, "myapp");
         CHECK_STR(app->cmdline, "myapp --flag");    // '\0' separators -> spaces
         CHECK_STR(app->exe, "/usr/bin/myapp");
@@ -45,6 +46,9 @@ void test_procfs(void)
     }
 
     CHECK(procfs_uptime(FIXTURE_PROC) == 1000.0);
+    CHECK(procfs_alive(FIXTURE_PROC, 200, 20));
+    CHECK(!procfs_alive(FIXTURE_PROC, 200, 99));    // same pid, different process
+    CHECK(!procfs_alive(FIXTURE_PROC, 12345, 20));  // gone
     CHECK(procfs_scan(a, "tests/fixtures/missing").len == 0);
     arena_free(a);
 }

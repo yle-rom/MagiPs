@@ -1,6 +1,7 @@
 #ifndef SERVICES_H
 #define SERVICES_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include "tree.h"
 #include "util.h"
@@ -10,8 +11,9 @@ typedef enum { SCOPE_SYSTEM, SCOPE_USER } Scope;
 typedef struct {
     const char *name;           // unit name ("docker") or process name ("waybar")
     Scope scope;
+    bool unit;                  // a systemd unit: stop it with systemctl, not kill
     int pid;                    // first-started process of the group
-    size_t nprocs;
+    Members members;
     long mem_kb;
     unsigned long long start;
 } Service;
