@@ -9,7 +9,7 @@ endif
 SRC = $(wildcard src/*.c)            # every .c file in src/
 OBJ = $(SRC:src/%.c=build/%.o)       # src/foo.c -> build/foo.o
 
-whatsup: $(OBJ)                      # link: all .o files -> one program
+magisc: $(OBJ)                      # link: all .o files -> one program
 	$(CC) $(CFLAGS) -o $@ $^
 
 build/%.o: src/%.c                   # compile: one .c -> one .o
@@ -25,7 +25,7 @@ test: $(LIB_OBJ) $(TEST_SRC) tests/test.h
 	./build/run_tests
 
 clean:
-	rm -rf build whatsup
+	rm -rf build magisc
 
 -include $(OBJ:.o=.d)                # rebuild .o files when a header changes
 .PHONY: clean test
