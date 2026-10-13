@@ -6,6 +6,7 @@
 #include "docker.h"
 #include "ports.h"
 #include "procfs.h"
+#include "services.h"
 #include "tree.h"
 #include "table.h"
 #include "util.h"
@@ -19,10 +20,14 @@ int main(void)
     DesktopIndex desk = desktop_load(a, desktop_default_dirs(a));
     AppList apps = apps_build(a, &tree, &desk, (int)getuid());
 
-    // TEMP: check step 1d
-    for (size_t i = 0; i < apps.len; i++)
-        printf("  %-24s %-7d %-4zu %ldM\n", apps.items[i].name, apps.items[i].pid,
-               apps.items[i].nprocs, apps.items[i].mem_kb / 1024);
+    ServiceList services = services_build(a, &tree, (int)getuid());
+
+    // TEMP: check step 1e
+    for (size_t i = 0; i < services.len; i++)
+        printf("  %-6s %-28s %-7d %-4zu %ldM\n",
+               services.items[i].scope == SCOPE_SYSTEM ? "system" : "user",
+               services.items[i].name, services.items[i].pid,
+               services.items[i].nprocs, services.items[i].mem_kb / 1024);
 
     PortList ports = ports_scan(a, "/proc", &procs);
     ContainerList containers = docker_list(a);
