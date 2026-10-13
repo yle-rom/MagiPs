@@ -7,6 +7,7 @@
 
 typedef struct {
     int pid, ppid, uid;
+    int sid;                    // session id: pid == sid for the shell a terminal opened
     char state;                 // R running, S sleeping, Z zombie...
     char comm[16];              // short name from /proc/pid/stat (kernel max 15 + '\0')
     char *cmdline;              // full command line ("" for kernel threads)

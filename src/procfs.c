@@ -49,15 +49,15 @@ static int parse_stat(const char *root, int pid, Proc *p)
     memcpy(p->comm, open + 1, len);
     p->comm[len] = '\0';
 
-    // fields after ')': 3=state 4=ppid ... 22=starttime
+    // fields after ')': 3=state 4=ppid 5=pgrp 6=session ... 22=starttime
     int got = sscanf(close + 2,
-                     "%c %d"                        // state, ppid
-                     " %*s %*s %*s %*s %*s %*s"     // 5-10
+                     "%c %d %*s %d"                 // state, ppid, (pgrp), session
+                     " %*s %*s %*s %*s"             // 7-10
                      " %*s %*s %*s %*s %*s %*s"     // 11-16
                      " %*s %*s %*s %*s %*s"         // 17-21
                      " %llu",                       // starttime
-                     &p->state, &p->ppid, &p->start);
-    if (got != 3)
+                     &p->state, &p->ppid, &p->sid, &p->start);
+    if (got != 4)
         return -1;
 
     p->pid = pid;

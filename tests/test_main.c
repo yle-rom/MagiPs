@@ -10,6 +10,7 @@ int main(void)
     test_ports();
     test_config();
     test_db();
+    test_devserver();
 
     printf("%d checks, %d failed\n", test_checks, test_failures);
     return test_failures ? 1 : 0;

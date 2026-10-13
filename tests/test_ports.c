@@ -1,27 +1,34 @@
 #include "ports.h"
 #include "test.h"
 
+static const Port *find_port(const PortList *l, int port)
+{
+    for (size_t i = 0; i < l->len; i++)
+        if (l->items[i].port == port)
+            return &l->items[i];
+    return NULL;
+}
+
 void test_ports(void)
 {
     Arena *a = arena_new(4096);
     ProcList procs = procfs_scan(a, FIXTURE_PROC);
     PortList ports = ports_scan(a, FIXTURE_PROC, &procs);
 
-    CHECK(ports.len == 3);                          // port 22 is ESTABLISHED, not listening
-    if (ports.len == 3) {                           // sorted by port number
-        CHECK(ports.items[0].port == 6379);
-        CHECK(ports.items[0].pid == 900);           // redis-server, via socket:[8888]
+    CHECK(ports.len == 5);                          // port 22 is ESTABLISHED, not listening
+    const int order[] = { 5173, 6379, 8000, 8080, 9000 };      // sorted by port number
+    for (size_t i = 0; i < ports.len && i < 5; i++)
+        CHECK(ports.items[i].port == order[i]);
 
-        CHECK(ports.items[1].port == 8080);
-        CHECK_STR(ports.items[1].proto, "tcp");
-        CHECK_STR(ports.items[1].addr, "127.0.0.1");
-        CHECK(ports.items[1].pid == 200);           // found via fd -> socket:[5555]
-
-        CHECK(ports.items[2].port == 9000);
-        CHECK_STR(ports.items[2].proto, "tcp6");
-        CHECK_STR(ports.items[2].addr, "::1");
-        CHECK(ports.items[2].pid == 200);
-    }
+    const Port *p = find_port(&ports, 8080);
+    CHECK(p && p->pid == 200 && strcmp(p->proto, "tcp") == 0);  // via fd -> socket:[5555]
+    CHECK(p && strcmp(p->addr, "127.0.0.1") == 0);
+    p = find_port(&ports, 9000);
+    CHECK(p && p->pid == 200 && strcmp(p->proto, "tcp6") == 0 && strcmp(p->addr, "::1") == 0);
+    p = find_port(&ports, 6379);
+    CHECK(p && p->pid == 900);
+    p = find_port(&ports, 5173);
+    CHECK(p && p->pid == 312);
 
     Port local = { .addr = "127.0.0.1" }, any = { .addr = "::" }, bridge = { .addr = "192.168.122.1" };
     CHECK(port_reach(&local) == REACH_LOCAL);

@@ -26,12 +26,12 @@ void test_apps_services(void)
         CHECK(apps.items[0].members.len == 2);           // child with the weird name rolled up
         CHECK(apps.items[0].mem_kb == 1500);
         CHECK_STR(apps.items[1].name, "Term → nvim");
-        CHECK(apps.items[1].members.len == 3);
+        CHECK(apps.items[1].members.len == 6);   // + the npm dev server inside it
     }
 
     Config cfg = config_parse(a, config_default_text, "defaults");
     ServiceList services = services_build(a, &tree, FIXTURE_UID, &cfg);
-    CHECK(services.len == 6);                      // + redis-server
+    CHECK(services.len == 7);                      // + redis-server, orphaned python3
 
     const Service *s = find_service(&services, "docker");
     CHECK(s && s->scope == SCOPE_SYSTEM && s->pid == 600 && s->unit);

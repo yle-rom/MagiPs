@@ -36,7 +36,6 @@ WHAT WE TRACK
 
   ideas (pick later):
   databases   mongod, mariadbd, postgres, redis... (native or docker)
-  dev servers node/python/java processes + their project dir (/proc/pid/cwd)
   orphans     dev processes re-parented to PID 1 after their terminal closed
   zombies     defunct processes and which parent isn't reaping them
   failed      systemd services that crashed
@@ -64,9 +63,11 @@ STAGES
                          containers: docker stop, user units: systemctl --user
                          system services: show the sudo command      [done]
   3. databases           name + port + image detection,
-                         kill via systemctl / docker stop
-  4. polish              --json, --sort, --all, find <name>, colors,
-                         config file (custom signatures)
+                         kill via systemctl / docker stop        [done]
+     dev servers         listening dev processes + project dir,
+                         orphan detection, Dev tab in -i            [done]
+     config              ~/.config/whatsup/config: hide lists, [apps]  [done]
+  4. polish              colors [done]; --json, --all
   5. publish             README + demo gif, man page, CI, releases, AUR
   6. maybe               interactive TUI (ncurses), docker via socket,
                          PSS memory, extra trackers from ideas list

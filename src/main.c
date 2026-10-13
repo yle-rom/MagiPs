@@ -1,5 +1,6 @@
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -7,6 +8,7 @@
 #include "apps.h"
 #include "config.h"
 #include "db.h"
+#include "devserver.h"
 #include "desktop.h"
 #include "docker.h"
 #include "ports.h"
@@ -112,6 +114,25 @@ static void print_databases(Arena *a, const DatabaseList *dbs, const ContainerLi
     table_print_note(t, guessed ? "(? = guessed from its port)" : NULL);
 }
 
+static void print_devservers(Arena *a, const DevServerList *devs, double uptime)
+{
+    const char *cols[] = { "PROJECT", "COMMAND", "PORT", "PID", "UPTIME", "" };
+    Table *t = table_new(a, "DEV SERVERS", 6, cols);
+    for (size_t i = 0; i < devs->len; i++) {
+        const DevServer *d = &devs->items[i];
+        const char *row[] = {
+            paint(a, STYLE_BOLD, d->project),
+            d->command,
+            d->ports,
+            arena_printf(a, "%d", d->pid),
+            format_age(a, d->start, uptime),
+            d->orphaned ? paint(a, STYLE_WARN, "orphaned") : "",
+        };
+        table_row(t, row);
+    }
+    table_print(t);
+}
+
 static void print_containers(Arena *a, const ContainerList *containers)
 {
     const char *cols[] = { "CONTAINER", "IMAGE", "PORTS", "STATUS" };
@@ -168,7 +189,7 @@ static void print_ports(Arena *a, const PortList *ports, const Tree *tree,
 static void usage(FILE *out)
 {
     fputs("usage: whatsup [-i] [--no-color]\n"
-          "  (no option)  print apps, services, databases, containers and ports\n"
+          "  (no option)  print apps, services, dev servers, databases, containers, ports\n"
           "  -i           interactive: pick things and stop them (esc to quit)\n"
           "  --no-color   plain output (also: NO_COLOR=1, or piping to a file)\n"
           "  -h           this help\n"
@@ -185,6 +206,7 @@ typedef struct {
     ContainerList containers;
     PortList ports;
     DatabaseList databases;
+    DevServerList devservers;
 } World;
 
 static void scan(Arena *a, World *w)
@@ -204,6 +226,7 @@ static void scan(Arena *a, World *w)
     w->containers = docker_list(a);
     w->ports = ports_scan(a, PROC_ROOT, &w->procs);
     w->databases = db_find(a, &w->tree, &w->services, &w->containers, &w->ports);
+    w->devservers = dev_find(a, &w->tree, &w->apps, &w->ports, PROC_ROOT, uid, getenv("HOME"));
 }
 
 /* Pick, act, rescan, repeat until Esc. A fresh arena per round. */
@@ -219,7 +242,7 @@ static int interactive_loop(void)
         World w;
         scan(a, &w);
         Snapshot snap = { &w.apps, &w.services, &w.containers, &w.ports, &w.databases,
-                          &w.tree, PROC_ROOT };
+                          &w.devservers, &w.tree, PROC_ROOT };
         PickResult r = actions_pick(a, &snap, &tab);
         arena_free(a);
         if (r == PICK_QUIT)
@@ -253,6 +276,7 @@ int main(int argc, char **argv)
     scan(a, &w);
     print_apps(a, &w.apps, w.uptime);
     print_services(a, &w.services, w.uptime);
+    print_devservers(a, &w.devservers, w.uptime);
     print_databases(a, &w.databases, &w.containers);
     print_containers(a, &w.containers);
     print_ports(a, &w.ports, &w.tree, &w.containers);

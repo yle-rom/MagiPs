@@ -11,9 +11,11 @@
 
 #define TERM_WAIT_MS 3000           // how long to wait after SIGTERM before offering SIGKILL
 
-enum { TAB_ALL, TAB_APPS, TAB_SERVICES, TAB_DATABASES, TAB_CONTAINERS, TAB_PORTS, NTABS };
+enum {
+    TAB_ALL, TAB_APPS, TAB_SERVICES, TAB_DEV, TAB_DATABASES, TAB_CONTAINERS, TAB_PORTS, NTABS
+};
 static const char *const tabs[NTABS] = {
-    "All", "Apps", "Services", "Databases", "Containers", "Ports",
+    "All", "Apps", "Services", "Dev", "Databases", "Containers", "Ports",
 };
 
 typedef enum {
@@ -151,6 +153,15 @@ static Menu build_menu(Arena *a, const Snapshot *s)
                           arena_printf(a, "%3zu procs", sv->members.len),
                           format_mem(a, sv->mem_kb) } };
         menu_add(a, &m, item, service_action(a, sv));
+    }
+    for (size_t i = 0; i < s->devservers->len; i++) {
+        const DevServer *d = &s->devservers->items[i];
+        PickItem item = { TAB_DEV, { d->project, d->orphaned ? "dev, orphaned" : "dev",
+                          arena_printf(a, "%d", d->pid), arena_printf(a, ":%s", d->ports),
+                          d->command } };
+        Action act = { .kind = ACT_KILL, .what = arena_printf(a, "%s in %s", d->command, d->project),
+                       .members = &d->members };
+        menu_add(a, &m, item, act);
     }
     for (size_t i = 0; i < s->databases->len; i++) {
         const Database *d = &s->databases->items[i];

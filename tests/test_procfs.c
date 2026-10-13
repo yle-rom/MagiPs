@@ -14,7 +14,7 @@ void test_procfs(void)
     Arena *a = arena_new(4096);
     ProcList procs = procfs_scan(a, FIXTURE_PROC);
 
-    CHECK(procs.len == 17);                         // "net" and "uptime" are not pids
+    CHECK(procs.len == 21);                         // "net" and "uptime" are not pids
 
     const Proc *app = find(&procs, 200);
     CHECK(app != NULL);
@@ -36,6 +36,9 @@ void test_procfs(void)
         CHECK_STR(weird->comm, "My (weird) name");
         CHECK(weird->ppid == 200);
     }
+
+    const Proc *zsh = find(&procs, 301);            // the terminal's shell leads its session
+    CHECK(zsh && zsh->sid == 301);
 
     const Proc *kworker = find(&procs, 10);         // kernel thread: no memory, no cmdline
     CHECK(kworker != NULL);
