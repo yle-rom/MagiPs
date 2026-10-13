@@ -22,14 +22,12 @@ int main(void)
 
     ServiceList services = services_build(a, &tree, (int)getuid());
 
-    // TEMP: check step 1e
-    for (size_t i = 0; i < services.len; i++)
-        printf("  %-6s %-28s %-7d %-4zu %ldM\n",
-               services.items[i].scope == SCOPE_SYSTEM ? "system" : "user",
-               services.items[i].name, services.items[i].pid,
-               services.items[i].nprocs, services.items[i].mem_kb / 1024);
-
     PortList ports = ports_scan(a, "/proc", &procs);
+
+    // TEMP: check step 1f
+    for (size_t i = 0; i < ports.len; i++)
+        printf("  %-5s %-16s %-6d %d\n", ports.items[i].proto, ports.items[i].addr,
+               ports.items[i].port, ports.items[i].pid);
     ContainerList containers = docker_list(a);
 
     const char *app_cols[] = { "APP", "PID", "PROCS", "MEM" };
