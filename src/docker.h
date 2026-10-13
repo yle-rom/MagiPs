@@ -13,7 +13,10 @@ typedef struct {
     size_t len;
 } ContainerList;
 
-/* Running containers; empty list if docker is missing or not reachable. */
+/* Running containers via `docker ps`; empty list if docker is missing or not reachable. */
 ContainerList docker_list(Arena *a);
+
+/* Index of the container publishing host port `port` ("...:8085->8081/tcp"), or -1. */
+int docker_find_port(const ContainerList *list, int port);
 
 #endif

@@ -24,11 +24,13 @@ int main(void)
 
     PortList ports = ports_scan(a, "/proc", &procs);
 
-    // TEMP: check step 1f
-    for (size_t i = 0; i < ports.len; i++)
-        printf("  %-5s %-16s %-6d %d\n", ports.items[i].proto, ports.items[i].addr,
-               ports.items[i].port, ports.items[i].pid);
     ContainerList containers = docker_list(a);
+
+    // TEMP: check step 1g
+    for (size_t i = 0; i < containers.len; i++)
+        printf("  %s | %s | %s | %s\n", containers.items[i].name, containers.items[i].image,
+               containers.items[i].ports, containers.items[i].status);
+    printf("  port 8085 -> container %d\n", docker_find_port(&containers, 8085));
 
     const char *app_cols[] = { "APP", "PID", "PROCS", "MEM" };
     Table *t = table_new(a, "APPS", 4, app_cols);
