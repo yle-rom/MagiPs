@@ -186,11 +186,13 @@ static const char *char_at(const char *s, size_t n)
     return s;
 }
 
+/* Append n bytes of s to row; row always stays a terminated string. */
 static size_t put_bytes(char *row, size_t len, size_t size, const char *s, size_t n)
 {
     if (len + n + 1 > size)
         n = size - len - 1;
     memcpy(row + len, s, n);
+    row[len + n] = '\0';
     return len + n;
 }
 
