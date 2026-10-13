@@ -48,16 +48,16 @@ WHAT WE TRACK
 
 STAGES
   0. skeleton            Makefile, main.c, debug build          [done]
-  1. MVP                 apps + services + containers + ports
-       1a procfs         read /proc/<pid>/stat,status,cmdline      [done]
-       1b desktop        index .desktop files -> set of app executables
-       1c classify       per process: app / service / hidden (cgroup, uid)
-       1d apps           roll children up under each app, terminal -> job
-       1e services       user + system, essentials filter
-       1f ports          /proc/net/tcp{,6} + fd inode -> pid
-       1g docker         `docker ps --format` via popen
-       1h table          aligned columns
-       1i tests          fixture /proc + assert harness
+  1. MVP                 apps + services + containers + ports   [done]
+       1a procfs         read /proc/<pid>/stat,status,cmdline  [done]
+       1b desktop        index .desktop files -> set of app executables  [done]
+       1c classify       per process: app / service / hidden (cgroup, uid)  [done]
+       1d apps           roll children up under each app, terminal -> job  [done]
+       1e services       user + system, essentials filter  [done]
+       1f ports          /proc/net/tcp{,6} + fd inode -> pid  [done]
+       1g docker         `docker ps --format` via popen  [done]
+       1h table          aligned columns  [done]
+       1i tests          fixture /proc + assert harness  [done]
   2. kill                proc kill <pid|name|port>, whole tree,
                          TERM -> KILL, confirm, protect PID 1/shell
   3. databases           name + port + image detection,

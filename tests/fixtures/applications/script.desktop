@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=Script
+Exec=env FOO=1 python3 /opt/script.py

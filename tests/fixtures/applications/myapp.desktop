@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=My App
+Exec=/usr/bin/myapp %U
+
+[Desktop Action new-window]
+Name=New Window
+Exec=/usr/bin/other-program
