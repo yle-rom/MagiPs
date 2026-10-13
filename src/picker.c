@@ -325,7 +325,7 @@ static void erase(const Picker *p)
     fflush(stdout);
 }
 
-int picker_run(const PickItem *items, size_t n, const char *const *tabs, int ntabs)
+int picker_run(const PickItem *items, size_t n, const char *const *tabs, int ntabs, int *tab)
 {
     if (!raw_enable())
         return -1;
@@ -335,7 +335,8 @@ int picker_run(const PickItem *items, size_t n, const char *const *tabs, int nta
         raw_disable();
         return -1;
     }
-    Picker p = { .items = items, .n = n, .tabs = tabs, .ntabs = ntabs, .shown = shown };
+    Picker p = { .items = items, .n = n, .tabs = tabs, .ntabs = ntabs, .shown = shown,
+                 .tab = *tab >= 0 && *tab < ntabs ? *tab : 0 };
     for (size_t i = 0; i < n; i++)
         for (int c = 0; c < PICK_COLS; c++) {
             size_t w = items[i].cols[c] ? text_width(items[i].cols[c]) : 0;
@@ -385,6 +386,7 @@ int picker_run(const PickItem *items, size_t n, const char *const *tabs, int nta
     erase(&p);
     raw_disable();
     free(shown);
+    *tab = p.tab;
     return result;
 }
 

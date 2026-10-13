@@ -17,16 +17,19 @@ typedef struct {
     const char *proc_root;
 } Snapshot;
 
+typedef enum { PICK_AGAIN, PICK_QUIT } PickResult;
+
 /*
- * Interactive mode: pick something from apps/services/containers/ports,
- * confirm, then stop it the right way:
+ * One round of interactive mode: pick something from apps/services/
+ * containers/ports, confirm, then stop it the right way:
  *   apps, your own services  -> SIGTERM the whole group (SIGKILL if it won't die)
  *   containers               -> docker stop
  *   systemd user units       -> systemctl --user stop
  *   system services          -> print the sudo command to run yourself
  *   ports                    -> whatever owns the port
- * Returns the process exit code.
+ * *tab: section to start on / where the user left off.
+ * PICK_QUIT when the user pressed Esc; otherwise rescan and call again.
  */
-int actions_interactive(Arena *a, const Snapshot *s);
+PickResult actions_pick(Arena *a, const Snapshot *s, int *tab);
 
 #endif

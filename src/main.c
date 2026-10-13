@@ -121,8 +121,54 @@ static void usage(FILE *out)
 {
     fputs("usage: whatsup [-i]\n"
           "  (no option)  print apps, services, containers and ports\n"
-          "  -i           interactive: pick something and stop it\n"
+          "  -i           interactive: pick things and stop them (esc to quit)\n"
           "  -h           this help\n", out);
+}
+
+/* Everything one scan finds. Lives in one arena, freed together. */
+typedef struct {
+    ProcList procs;
+    double uptime;
+    Tree tree;
+    AppList apps;
+    ServiceList services;
+    ContainerList containers;
+    PortList ports;
+} World;
+
+static void scan(Arena *a, World *w)
+{
+    int uid = (int)getuid();
+    w->procs = procfs_scan(a, PROC_ROOT);
+    w->uptime = procfs_uptime(PROC_ROOT);
+    w->tree = tree_build(a, &w->procs);
+
+    // order matters: apps claim their processes first, services take the rest
+    DesktopIndex desk = desktop_load(a, desktop_default_dirs(a));
+    w->apps = apps_build(a, &w->tree, &desk, uid);
+    w->services = services_build(a, &w->tree, uid);
+    w->containers = docker_list(a);
+    w->ports = ports_scan(a, PROC_ROOT, &w->procs);
+}
+
+/* Pick, act, rescan, repeat until Esc. A fresh arena per round. */
+static int interactive_loop(void)
+{
+    if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) {
+        fprintf(stderr, "whatsup: interactive mode needs a terminal\n");
+        return 2;
+    }
+    int tab = 0;
+    for (;;) {
+        Arena *a = arena_new(1 << 16);
+        World w;
+        scan(a, &w);
+        Snapshot snap = { &w.apps, &w.services, &w.containers, &w.ports, &w.tree, PROC_ROOT };
+        PickResult r = actions_pick(a, &snap, &tab);
+        arena_free(a);
+        if (r == PICK_QUIT)
+            return 0;
+    }
 }
 
 int main(int argc, char **argv)
@@ -140,32 +186,16 @@ int main(int argc, char **argv)
             return 2;
         }
     }
+    if (interactive)
+        return interactive_loop();
 
     Arena *a = arena_new(1 << 16);     // 64 KB blocks
-    int uid = (int)getuid();
-
-    ProcList procs = procfs_scan(a, PROC_ROOT);
-    double uptime = procfs_uptime(PROC_ROOT);
-    Tree tree = tree_build(a, &procs);
-
-    // order matters: apps claim their processes first, services take the rest
-    DesktopIndex desk = desktop_load(a, desktop_default_dirs(a));
-    AppList apps = apps_build(a, &tree, &desk, uid);
-    ServiceList services = services_build(a, &tree, uid);
-    ContainerList containers = docker_list(a);
-    PortList ports = ports_scan(a, PROC_ROOT, &procs);
-
-    int status = 0;
-    if (interactive) {
-        Snapshot snap = { &apps, &services, &containers, &ports, &tree, PROC_ROOT };
-        status = actions_interactive(a, &snap);
-    } else {
-        print_apps(a, &apps, uptime);
-        print_services(a, &services, uptime);
-        print_containers(a, &containers);
-        print_ports(a, &ports, &tree, &containers);
-    }
-
+    World w;
+    scan(a, &w);
+    print_apps(a, &w.apps, w.uptime);
+    print_services(a, &w.services, w.uptime);
+    print_containers(a, &w.containers);
+    print_ports(a, &w.ports, &w.tree, &w.containers);
     arena_free(a);
-    return status;
+    return 0;
 }

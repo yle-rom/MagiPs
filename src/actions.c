@@ -260,38 +260,34 @@ static int do_run(const Action *act)
     return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
 }
 
-int actions_interactive(Arena *a, const Snapshot *s)
+PickResult actions_pick(Arena *a, const Snapshot *s, int *tab)
 {
-    if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) {
-        fprintf(stderr, "whatsup: interactive mode needs a terminal\n");
-        return 2;
-    }
-
     Menu m = build_menu(a, s);
-    int choice = picker_run(m.items, m.len, tabs, NTABS);
+    int choice = picker_run(m.items, m.len, tabs, NTABS, tab);
     if (choice < 0)
-        return 0;                                   // cancelled
+        return PICK_QUIT;                           // Esc
     const Action *act = &m.acts[choice];
 
     switch (act->kind) {
     case ACT_SHOW:
         printf("%s is %s\nRun:\n  %s\n", act->what, act->note, act->command);
-        return 0;
+        break;
 
     case ACT_RUN:
-        if (!picker_confirm(arena_printf(a, "Stop %s with `%s`?", act->what, act->command)))
-            return 0;
-        return do_run(act);
+        if (picker_confirm(arena_printf(a, "Stop %s with `%s`?", act->what, act->command)))
+            do_run(act);
+        break;
 
     case ACT_KILL: {
         size_t n = act->members->len;
         const char *warn = includes_my_terminal(s, act->members)
                                ? "\n  ⚠ this includes the terminal you're typing in." : "";
-        if (!picker_confirm(arena_printf(a, "Stop %s (%zu process%s)?%s", act->what, n,
-                                         n == 1 ? "" : "es", warn)))
-            return 0;
-        return do_kill(a, s, act);
+        if (picker_confirm(arena_printf(a, "Stop %s (%zu process%s)?%s", act->what, n,
+                                        n == 1 ? "" : "es", warn)))
+            do_kill(a, s, act);
+        break;
     }
     }
-    return 0;
+    putchar('\n');                                 // gap before the picker comes back
+    return PICK_AGAIN;
 }

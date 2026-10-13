@@ -15,9 +15,10 @@ typedef struct {
 /*
  * fzf-style picker drawn under the prompt: type to filter, Tab switches
  * section, arrows move, Enter picks, Esc quits. Erases itself when done.
+ * *tab is the section to start on, and is updated to where the user left it.
  * Returns the chosen item's index, or -1 if cancelled / not a terminal.
  */
-int picker_run(const PickItem *items, size_t n, const char *const *tabs, int ntabs);
+int picker_run(const PickItem *items, size_t n, const char *const *tabs, int ntabs, int *tab);
 
 /* Ask a y/N question with a single keypress. */
 bool picker_confirm(const char *question);
