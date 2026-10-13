@@ -2,13 +2,17 @@
 #define APPS_H
 
 #include <stddef.h>
-#include "procfs.h"
+#include "desktop.h"
+#include "tree.h"
 #include "util.h"
 
 typedef struct {
-    Proc *root;                 // top-level process of the app
+    const char *name;           // "Firefox", or "Alacritty → nvim" for terminals
+    int pid;                    // top-level process (kill this)
     size_t nprocs;              // root + all descendants
     long mem_kb;                // summed rss
+    unsigned long long start;   // clock ticks since boot
+    const DesktopEntry *entry;
 } App;
 
 typedef struct {
@@ -16,7 +20,11 @@ typedef struct {
     size_t len;
 } AppList;
 
-/* Group processes into top-level apps, hiding kernel/system noise. */
-AppList apps_build(Arena *a, const ProcList *procs);
+/*
+ * An app is a process of uid whose program matches a .desktop entry and
+ * whose ancestors don't (firefox, not its 15 children). Claims each app's
+ * whole subtree in t. Sorted by memory, biggest first.
+ */
+AppList apps_build(Arena *a, Tree *t, const DesktopIndex *d, int uid);
 
 #endif

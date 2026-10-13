@@ -6,6 +6,7 @@
 #include "docker.h"
 #include "ports.h"
 #include "procfs.h"
+#include "tree.h"
 #include "table.h"
 #include "util.h"
 
@@ -14,17 +15,15 @@ int main(void)
     Arena *a = arena_new(1 << 16);     // 64 KB blocks
 
     ProcList procs = procfs_scan(a, "/proc");
-    // TEMP: check step 1b
+    Tree tree = tree_build(a, &procs);
     DesktopIndex desk = desktop_load(a, desktop_default_dirs(a));
-    printf("%zu desktop keys\n", desk.len);
-    for (size_t i = 0; i < procs.len; i++) {
-        const DesktopEntry *e = desktop_match(&desk, &procs.items[i]);
-        if (e && procs.items[i].uid == (int)getuid())
-            printf("  %-6d ppid %-6d %-16s -> %s%s\n", procs.items[i].pid, procs.items[i].ppid,
-                   procs.items[i].comm, e->name, e->terminal ? " (terminal)" : "");
-    }
+    AppList apps = apps_build(a, &tree, &desk, (int)getuid());
 
-    AppList apps = apps_build(a, &procs);
+    // TEMP: check step 1d
+    for (size_t i = 0; i < apps.len; i++)
+        printf("  %-24s %-7d %-4zu %ldM\n", apps.items[i].name, apps.items[i].pid,
+               apps.items[i].nprocs, apps.items[i].mem_kb / 1024);
+
     PortList ports = ports_scan(a, "/proc", &procs);
     ContainerList containers = docker_list(a);
 
