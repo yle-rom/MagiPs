@@ -8,12 +8,6 @@ static bool is_essential(const Config *cfg, const char *name, Scope scope)
     return config_match(scope == SCOPE_SYSTEM ? &cfg->hide_system : &cfg->hide_user, name);
 }
 
-/* Docker/podman containers get their own section. */
-static bool is_container(const char *cgroup)
-{
-    return strstr(cgroup, "/docker-") || strstr(cgroup, "/libpod-");
-}
-
 /*
  * Last ".service" part of a cgroup path, without the suffix:
  *   /system.slice/docker.service                        -> "docker"
@@ -107,7 +101,7 @@ ServiceList services_build(Arena *a, Tree *t, int uid, const Config *cfg)
         const Proc *p = &procs->items[i];
         if (t->owner[i] != OWNER_FREE)
             continue;
-        if (p->pid == 1 || tree_is_kernel(p) || is_container(p->cgroup)) {
+        if (p->pid == 1 || tree_is_kernel(p) || tree_in_container(p)) {
             t->owner[i] = OWNER_HIDDEN;
             continue;
         }

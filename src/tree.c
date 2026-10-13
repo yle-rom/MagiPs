@@ -1,5 +1,6 @@
 #include "tree.h"
 #include <stdlib.h>
+#include <string.h>
 
 static int cmp_pid(const void *x, const void *y)
 {
@@ -48,6 +49,11 @@ size_t tree_find(const Tree *t, int pid)
 bool tree_is_kernel(const Proc *p)
 {
     return p->pid == 2 || p->ppid == 2;
+}
+
+bool tree_in_container(const Proc *p)
+{
+    return strstr(p->cgroup, "/docker-") || strstr(p->cgroup, "/libpod-");
 }
 
 void members_add(Arena *a, Members *m, const Proc *p)

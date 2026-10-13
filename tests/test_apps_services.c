@@ -31,7 +31,7 @@ void test_apps_services(void)
 
     Config cfg = config_parse(a, config_default_text, "defaults");
     ServiceList services = services_build(a, &tree, FIXTURE_UID, &cfg);
-    CHECK(services.len == 5);
+    CHECK(services.len == 6);                      // + redis-server
 
     const Service *s = find_service(&services, "docker");
     CHECK(s && s->scope == SCOPE_SYSTEM && s->pid == 600 && s->unit);

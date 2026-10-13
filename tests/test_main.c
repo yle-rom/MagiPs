@@ -9,6 +9,7 @@ int main(void)
     test_apps_services();
     test_ports();
     test_config();
+    test_db();
 
     printf("%d checks, %d failed\n", test_checks, test_failures);
     return test_failures ? 1 : 0;

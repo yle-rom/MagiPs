@@ -14,7 +14,7 @@ void test_procfs(void)
     Arena *a = arena_new(4096);
     ProcList procs = procfs_scan(a, FIXTURE_PROC);
 
-    CHECK(procs.len == 16);                         // "net" and "uptime" are not pids
+    CHECK(procs.len == 17);                         // "net" and "uptime" are not pids
 
     const Proc *app = find(&procs, 200);
     CHECK(app != NULL);

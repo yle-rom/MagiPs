@@ -2,6 +2,7 @@
 #define ACTIONS_H
 
 #include "apps.h"
+#include "db.h"
 #include "docker.h"
 #include "ports.h"
 #include "services.h"
@@ -13,6 +14,7 @@ typedef struct {
     const ServiceList *services;
     const ContainerList *containers;
     const PortList *ports;
+    const DatabaseList *databases;
     const Tree *tree;
     const char *proc_root;
 } Snapshot;
@@ -26,7 +28,7 @@ typedef enum { PICK_AGAIN, PICK_QUIT } PickResult;
  *   containers               -> docker stop
  *   systemd user units       -> systemctl --user stop
  *   system services          -> print the sudo command to run yourself
- *   ports                    -> whatever owns the port
+ *   ports, databases         -> whatever runs them
  * *tab: section to start on / where the user left off.
  * PICK_QUIT when the user pressed Esc; otherwise rescan and call again.
  */

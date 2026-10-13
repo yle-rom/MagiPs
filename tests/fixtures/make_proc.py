@@ -13,7 +13,8 @@
     ├── 600 dockerd               system service (docker.service)
     ├── 601 dbus-daemon           hidden: essential
     ├── 700 mongod                hidden: container
-    └── 800 pipewire              user service (pipewire.service)
+    ├── 800 pipewire              user service (pipewire.service)
+    └── 900 redis-server          user service + database, listens on :6379
     2 kthreadd -> 10 kworker      hidden: kernel
 """
 import os, shutil
@@ -41,6 +42,7 @@ PROCS = [
     (700, 1, "mongod", 999, 600, 60, "/system.slice/docker-abc123.scope", "", ["mongod"]),
     (800, 1, "pipewire", 1000, 60, 15,
      USER + "/user@1000.service/session.slice/pipewire.service", "/usr/bin/pipewire", ["pipewire"]),
+    (900, 1, "redis-server", 1000, 80, 70, SESSION, "/usr/bin/redis-server", ["redis-server", "*:6379"]),
 ]
 
 shutil.rmtree(ROOT, ignore_errors=True)
@@ -68,11 +70,13 @@ for pid, ppid, comm, uid, rss, start, cgroup, exe, argv in PROCS:
 os.symlink("socket:[5555]", os.path.join(ROOT, "200", "fd", "3"))
 os.symlink("socket:[7777]", os.path.join(ROOT, "200", "fd", "4"))
 os.symlink("/dev/null", os.path.join(ROOT, "200", "fd", "0"))
+os.symlink("socket:[8888]", os.path.join(ROOT, "900", "fd", "6"))
 HDR = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"
 with open(os.path.join(ROOT, "net", "tcp"), "w") as f:
     f.write(HDR)
     f.write("   0: 0100007F:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 5555 1\n")
     f.write("   1: 00000000:0016 0100007F:D431 01 00000000:00000000 00:00000000 00000000     0        0 6666 1\n")
+    f.write("   2: 00000000:18EB 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 8888 1\n")
 with open(os.path.join(ROOT, "net", "tcp6"), "w") as f:
     f.write(HDR)
     f.write("   0: 00000000000000000000000001000000:2328 00000000000000000000000000000000:0000 0A "

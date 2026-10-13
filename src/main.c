@@ -6,6 +6,7 @@
 #include "actions.h"
 #include "apps.h"
 #include "config.h"
+#include "db.h"
 #include "desktop.h"
 #include "docker.h"
 #include "ports.h"
@@ -66,6 +67,37 @@ static void print_services(Arena *a, const ServiceList *services, double uptime)
         table_row(t, row);
     }
     table_print(t);
+}
+
+/* "docker: name" / "system service: mariadb" / "user: redis-server" / "process" */
+static const char *db_where(Arena *a, const Database *d, const ContainerList *containers)
+{
+    if (d->container >= 0)
+        return arena_printf(a, "docker: %s", containers->items[d->container].name);
+    if (d->service)
+        return arena_printf(a, "%s service: %s",
+                            d->service->scope == SCOPE_SYSTEM ? "system" : "user", d->service->name);
+    return "process";
+}
+
+static void print_databases(Arena *a, const DatabaseList *dbs, const ContainerList *containers)
+{
+    const char *cols[] = { "DATABASE", "WHERE", "PID", "PORT" };
+    Table *t = table_new(a, "DATABASES", 4, cols);
+    bool guessed = false;
+    for (size_t i = 0; i < dbs->len; i++) {
+        const Database *d = &dbs->items[i];
+        guessed |= d->guessed;
+        const char *row[] = {
+            d->guessed ? arena_printf(a, "%s?", d->engine) : d->engine,
+            db_where(a, d, containers),
+            d->pid >= 0 ? arena_printf(a, "%d", d->pid) : "-",
+            !d->port ? "-" : d->port_internal ? arena_printf(a, "%d (internal)", d->port)
+                                              : arena_printf(a, "%d", d->port),
+        };
+        table_row(t, row);
+    }
+    table_print_note(t, guessed ? "(? = guessed from its port)" : NULL);
 }
 
 static void print_containers(Arena *a, const ContainerList *containers)
@@ -136,6 +168,7 @@ typedef struct {
     ServiceList services;
     ContainerList containers;
     PortList ports;
+    DatabaseList databases;
 } World;
 
 static void scan(Arena *a, World *w)
@@ -154,6 +187,7 @@ static void scan(Arena *a, World *w)
     w->services = services_build(a, &w->tree, uid, &cfg);
     w->containers = docker_list(a);
     w->ports = ports_scan(a, PROC_ROOT, &w->procs);
+    w->databases = db_find(a, &w->tree, &w->services, &w->containers, &w->ports);
 }
 
 /* Pick, act, rescan, repeat until Esc. A fresh arena per round. */
@@ -168,7 +202,8 @@ static int interactive_loop(void)
         Arena *a = arena_new(1 << 16);
         World w;
         scan(a, &w);
-        Snapshot snap = { &w.apps, &w.services, &w.containers, &w.ports, &w.tree, PROC_ROOT };
+        Snapshot snap = { &w.apps, &w.services, &w.containers, &w.ports, &w.databases,
+                          &w.tree, PROC_ROOT };
         PickResult r = actions_pick(a, &snap, &tab);
         arena_free(a);
         if (r == PICK_QUIT)
@@ -199,6 +234,7 @@ int main(int argc, char **argv)
     scan(a, &w);
     print_apps(a, &w.apps, w.uptime);
     print_services(a, &w.services, w.uptime);
+    print_databases(a, &w.databases, &w.containers);
     print_containers(a, &w.containers);
     print_ports(a, &w.ports, &w.tree, &w.containers);
     arena_free(a);

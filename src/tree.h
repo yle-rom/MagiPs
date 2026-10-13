@@ -57,6 +57,9 @@ size_t tree_find(const Tree *t, int pid);
 /* kthreadd (pid 2) and its children: kernel workers, not programs. */
 bool tree_is_kernel(const Proc *p);
 
+/* Runs inside a docker/podman container (those get their own section). */
+bool tree_in_container(const Proc *p);
+
 /*
  * Give i and all its still-free descendants to owner.
  * Adds them to *m and their memory to *mem_kb.

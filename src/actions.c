@@ -11,8 +11,10 @@
 
 #define TERM_WAIT_MS 3000           // how long to wait after SIGTERM before offering SIGKILL
 
-enum { TAB_ALL, TAB_APPS, TAB_SERVICES, TAB_CONTAINERS, TAB_PORTS, NTABS };
-static const char *const tabs[NTABS] = { "All", "Apps", "Services", "Containers", "Ports" };
+enum { TAB_ALL, TAB_APPS, TAB_SERVICES, TAB_DATABASES, TAB_CONTAINERS, TAB_PORTS, NTABS };
+static const char *const tabs[NTABS] = {
+    "All", "Apps", "Services", "Databases", "Containers", "Ports",
+};
 
 typedef enum {
     ACT_KILL,       // signal every process of a group ourselves
@@ -116,6 +118,21 @@ static bool port_action(Arena *a, const Snapshot *s, const PortSummary *p, Actio
     return true;
 }
 
+/* A database is stopped like the thing running it. */
+static Action db_action(Arena *a, const Snapshot *s, const Database *d)
+{
+    if (d->container >= 0)
+        return container_action(a, &s->containers->items[d->container]);
+    if (d->service)
+        return service_action(a, d->service);
+
+    Members *one = arena_alloc(a, sizeof *one);     // a lone process: just that pid
+    size_t i = tree_find(s->tree, d->pid);
+    if (i != TREE_NONE)
+        members_add(a, one, &s->tree->procs->items[i]);
+    return (Action){ .kind = ACT_KILL, .what = d->engine, .members = one };
+}
+
 static Menu build_menu(Arena *a, const Snapshot *s)
 {
     Menu m = { 0 };
@@ -134,6 +151,19 @@ static Menu build_menu(Arena *a, const Snapshot *s)
                           arena_printf(a, "%3zu procs", sv->members.len),
                           format_mem(a, sv->mem_kb) } };
         menu_add(a, &m, item, service_action(a, sv));
+    }
+    for (size_t i = 0; i < s->databases->len; i++) {
+        const Database *d = &s->databases->items[i];
+        const char *where = d->container >= 0 ? s->containers->items[d->container].name
+                            : d->service      ? d->service->name
+                                              : "process";
+        PickItem item = { TAB_DATABASES, {
+            d->guessed ? arena_printf(a, "%s?", d->engine) : d->engine, "database",
+            d->pid >= 0 ? arena_printf(a, "%d", d->pid) : "-",
+            !d->port ? "" : d->port_internal ? arena_printf(a, ":%d internal", d->port)
+                                             : arena_printf(a, ":%d", d->port),
+            where } };
+        menu_add(a, &m, item, db_action(a, s, d));
     }
     for (size_t i = 0; i < s->containers->len; i++) {
         const Container *c = &s->containers->items[i];
