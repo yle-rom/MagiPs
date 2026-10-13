@@ -27,5 +27,6 @@ void test_procfs(void);
 void test_desktop(void);
 void test_apps_services(void);
 void test_ports(void);
+void test_config(void);
 
 #endif

@@ -5,6 +5,7 @@
 
 #include "actions.h"
 #include "apps.h"
+#include "config.h"
 #include "desktop.h"
 #include "docker.h"
 #include "ports.h"
@@ -122,7 +123,8 @@ static void usage(FILE *out)
     fputs("usage: whatsup [-i]\n"
           "  (no option)  print apps, services, containers and ports\n"
           "  -i           interactive: pick things and stop them (esc to quit)\n"
-          "  -h           this help\n", out);
+          "  -h           this help\n"
+          "config: ~/.config/whatsup/config (created on first run)\n", out);
 }
 
 /* Everything one scan finds. Lives in one arena, freed together. */
@@ -139,14 +141,17 @@ typedef struct {
 static void scan(Arena *a, World *w)
 {
     int uid = (int)getuid();
+    Config cfg = config_load(a);
     w->procs = procfs_scan(a, PROC_ROOT);
     w->uptime = procfs_uptime(PROC_ROOT);
     w->tree = tree_build(a, &w->procs);
 
     // order matters: apps claim their processes first, services take the rest
     DesktopIndex desk = desktop_load(a, desktop_default_dirs(a));
+    for (size_t i = 0; i < cfg.apps.len; i++)
+        desktop_add(a, &desk, cfg.apps.items[i]);
     w->apps = apps_build(a, &w->tree, &desk, uid);
-    w->services = services_build(a, &w->tree, uid);
+    w->services = services_build(a, &w->tree, uid, &cfg);
     w->containers = docker_list(a);
     w->ports = ports_scan(a, PROC_ROOT, &w->procs);
 }

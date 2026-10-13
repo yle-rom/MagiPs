@@ -2,30 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-/*
- * "Needed for the laptop to work": hidden. Matched as name prefixes.
- * Edit these lists to taste.
- */
-static const char *const system_essentials[] = {
-    "systemd-", "dbus", "NetworkManager", "wpa_supplicant", "iwd", "polkit",
-    "udisks2", "upower", "rtkit-daemon", "bluetooth", "accounts-daemon",
-    "avahi-daemon", "power-profiles-daemon", "tlp", "thermald", "acpid",
-    "ModemManager", "getty@", "serial-getty@", "ly@", "gdm", "sddm", "lightdm",
-    "greetd", "user@", "user-runtime-dir@", NULL,
-};
-
-static const char *const user_essentials[] = {
-    "dbus", "at-spi", "xdg-desktop-portal", "xdg-document-portal",
-    "xdg-permission-store", "dconf", "gvfs", "user@", NULL,
-};
-
-static bool is_essential(const char *name, Scope scope)
+/* "Needed for the machine to work": hidden. The lists live in the config file. */
+static bool is_essential(const Config *cfg, const char *name, Scope scope)
 {
-    const char *const *list = scope == SCOPE_SYSTEM ? system_essentials : user_essentials;
-    for (size_t i = 0; list[i]; i++)
-        if (strncmp(name, list[i], strlen(list[i])) == 0)
-            return true;
-    return false;
+    return config_match(scope == SCOPE_SYSTEM ? &cfg->hide_system : &cfg->hide_user, name);
 }
 
 /* Docker/podman containers get their own section. */
@@ -114,7 +94,7 @@ static int cmp_service(const void *x, const void *y)
     return strcmp(a->name, b->name);
 }
 
-ServiceList services_build(Arena *a, Tree *t, int uid)
+ServiceList services_build(Arena *a, Tree *t, int uid, const Config *cfg)
 {
     const ProcList *procs = t->procs;
     size_t n = procs->len;
@@ -135,7 +115,7 @@ ServiceList services_build(Arena *a, Tree *t, int uid)
             continue;
 
         Scope scope = strncmp(p->cgroup, "/system.slice/", 14) == 0 ? SCOPE_SYSTEM : SCOPE_USER;
-        if (is_essential(unit, scope)) {
+        if (is_essential(cfg, unit, scope)) {
             t->owner[i] = OWNER_HIDDEN;
             continue;
         }
@@ -173,7 +153,7 @@ ServiceList services_build(Arena *a, Tree *t, int uid)
         Members members = { 0 };
         long mem = 0;
         claim_group(a, t, i, is_root, &members, &mem);
-        if (!is_essential(p->comm, SCOPE_USER))
+        if (!is_essential(cfg, p->comm, SCOPE_USER))
             add(a, &list, &cap, p->comm, SCOPE_USER, false, p, &members, mem);
     }
 
@@ -186,7 +166,7 @@ ServiceList services_build(Arena *a, Tree *t, int uid)
         Members members = { 0 };
         long mem = 0;
         tree_claim(a, t, i, OWNER_SERVICE, &members, &mem);
-        if (!is_essential(p->comm, SCOPE_SYSTEM))
+        if (!is_essential(cfg, p->comm, SCOPE_SYSTEM))
             add(a, &list, &cap, p->comm, SCOPE_SYSTEM, false, p, &members, mem);
     }
 

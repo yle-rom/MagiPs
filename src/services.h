@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include "config.h"
 #include "tree.h"
 #include "util.h"
 
@@ -27,9 +28,9 @@ typedef struct {
  * Everything running under the hood that apps_build didn't claim:
  *   - processes in a systemd .service unit, grouped by unit (system or user)
  *   - other processes of uid, grouped by process tree (waybar, mako, ollama)
- * Kernel threads, PID 1, containers and an "essentials" list are hidden.
+ * Kernel threads, PID 1, containers and the config's hide lists are hidden.
  * Run after apps_build. Sorted: system first, then by name.
  */
-ServiceList services_build(Arena *a, Tree *t, int uid);
+ServiceList services_build(Arena *a, Tree *t, int uid, const Config *cfg);
 
 #endif

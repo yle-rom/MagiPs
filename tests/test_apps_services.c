@@ -29,7 +29,8 @@ void test_apps_services(void)
         CHECK(apps.items[1].members.len == 3);
     }
 
-    ServiceList services = services_build(a, &tree, FIXTURE_UID);
+    Config cfg = config_parse(a, config_default_text, "defaults");
+    ServiceList services = services_build(a, &tree, FIXTURE_UID, &cfg);
     CHECK(services.len == 5);
 
     const Service *s = find_service(&services, "docker");

@@ -19,7 +19,7 @@ typedef struct {
 
 typedef struct {
     DesktopEntry *items;
-    size_t len;
+    size_t len, cap;
 } DesktopIndex;
 
 /* $XDG_DATA_HOME/applications + each $XDG_DATA_DIRS/applications, NULL-terminated. */
@@ -27,6 +27,9 @@ const char **desktop_default_dirs(Arena *a);
 
 /* Read every *.desktop file in the given NULL-terminated list of dirs. */
 DesktopIndex desktop_load(Arena *a, const char **dirs);
+
+/* Add one process name as an app (from the config's [apps] list). */
+void desktop_add(Arena *a, DesktopIndex *d, const char *name);
 
 /* The entry whose key matches the process's exe or comm, or NULL. */
 const DesktopEntry *desktop_match(const DesktopIndex *d, const Proc *p);

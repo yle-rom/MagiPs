@@ -8,6 +8,7 @@ int main(void)
     test_desktop();
     test_apps_services();
     test_ports();
+    test_config();
 
     printf("%d checks, %d failed\n", test_checks, test_failures);
     return test_failures ? 1 : 0;

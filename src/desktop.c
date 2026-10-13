@@ -49,11 +49,11 @@ static bool exec_program(const char *exec, char *out, size_t size)
     }
 }
 
-static void add_key(Arena *a, DesktopIndex *d, size_t *cap, const char *key,
+static void add_key(Arena *a, DesktopIndex *d, const char *key,
                     const char *name, bool terminal)
 {
-    if (d->len == *cap)
-        d->items = arena_grow(a, d->items, d->len, cap, sizeof *d->items);
+    if (d->len == d->cap)
+        d->items = arena_grow(a, d->items, d->len, &d->cap, sizeof *d->items);
     d->items[d->len++] = (DesktopEntry){
         .key = arena_strdup(a, key),
         .name = arena_strdup(a, name),
@@ -62,7 +62,7 @@ static void add_key(Arena *a, DesktopIndex *d, size_t *cap, const char *key,
 }
 
 /* If path is a symlink to a differently named binary, add that name too. */
-static void add_real_key(Arena *a, DesktopIndex *d, size_t *cap, const char *path,
+static void add_real_key(Arena *a, DesktopIndex *d, const char *path,
                          const char *base, const char *name, bool terminal)
 {
     char real[PATH_MAX];
@@ -70,7 +70,7 @@ static void add_real_key(Arena *a, DesktopIndex *d, size_t *cap, const char *pat
         return;
     const char *real_base = path_base(real);
     if (strcmp(real_base, base) != 0 && !is_wrapper(real_base))
-        add_key(a, d, cap, real_base, name, terminal);
+        add_key(a, d, real_base, name, terminal);
 }
 
 /*
@@ -79,7 +79,7 @@ static void add_real_key(Arena *a, DesktopIndex *d, size_t *cap, const char *pat
  * up in every $PATH dir, since a wrapper script earlier in $PATH can hide the
  * symlink.
  */
-static void add_app(Arena *a, DesktopIndex *d, size_t *cap, const char *exec,
+static void add_app(Arena *a, DesktopIndex *d, const char *exec,
                     const char *name, bool terminal)
 {
     char prog[PATH_MAX], full[PATH_MAX];
@@ -89,10 +89,10 @@ static void add_app(Arena *a, DesktopIndex *d, size_t *cap, const char *exec,
     const char *base = path_base(prog);
     if (is_wrapper(base))
         return;
-    add_key(a, d, cap, base, name, terminal);
+    add_key(a, d, base, name, terminal);
 
     if (strchr(prog, '/')) {
-        add_real_key(a, d, cap, prog, base, name, terminal);
+        add_real_key(a, d, prog, base, name, terminal);
         return;
     }
 
@@ -103,7 +103,7 @@ static void add_app(Arena *a, DesktopIndex *d, size_t *cap, const char *exec,
         size_t len = strcspn(path, ":");
         int n = snprintf(full, sizeof full, "%.*s/%s", (int)len, path, prog);
         if (len > 0 && n > 0 && (size_t)n < sizeof full)   // skip if cut short
-            add_real_key(a, d, cap, full, base, name, terminal);
+            add_real_key(a, d, full, base, name, terminal);
         path += len;
         if (*path == ':')
             path++;
@@ -111,7 +111,7 @@ static void add_app(Arena *a, DesktopIndex *d, size_t *cap, const char *exec,
 }
 
 /* Parse the [Desktop Entry] section of one file. */
-static void load_file(Arena *a, DesktopIndex *d, size_t *cap, const char *path)
+static void load_file(Arena *a, DesktopIndex *d, const char *path)
 {
     FILE *f = fopen(path, "r");
     if (!f)
@@ -146,13 +146,12 @@ static void load_file(Arena *a, DesktopIndex *d, size_t *cap, const char *path)
     fclose(f);
 
     if (is_app && !hidden && exec[0] && name[0])
-        add_app(a, d, cap, exec, name, terminal);
+        add_app(a, d, exec, name, terminal);
 }
 
 DesktopIndex desktop_load(Arena *a, const char **dirs)
 {
     DesktopIndex d = { 0 };
-    size_t cap = 0;
 
     for (size_t i = 0; dirs[i]; i++) {
         DIR *dir = opendir(dirs[i]);
@@ -165,7 +164,7 @@ DesktopIndex desktop_load(Arena *a, const char **dirs)
                 continue;
             char path[PATH_MAX];
             snprintf(path, sizeof path, "%s/%s", dirs[i], e->d_name);
-            load_file(a, &d, &cap, path);
+            load_file(a, &d, path);
         }
         closedir(dir);
     }
@@ -207,6 +206,11 @@ const char **desktop_default_dirs(Arena *a)
     }
     dirs[n] = NULL;
     return dirs;
+}
+
+void desktop_add(Arena *a, DesktopIndex *d, const char *name)
+{
+    add_key(a, d, name, name, false);
 }
 
 /* comm is the process name cut to 15 chars, so only compare that much. */
