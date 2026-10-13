@@ -142,4 +142,4 @@ With `MAGIPS_PROC` pointing at a fake `/proc` (as in tests and the demo), magips
 
 ## License
 
-TBD
+[MIT](LICENSE)
