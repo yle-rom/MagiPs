@@ -11,4 +11,15 @@ void  *arena_alloc(Arena *a, size_t size);       // zeroed memory
 char  *arena_strdup(Arena *a, const char *s);
 void   arena_free(Arena *a);
 
+/*
+ * Grow an array living in the arena. Call when len == *cap:
+ *   if (list.len == cap)
+ *       list.items = arena_grow(a, list.items, list.len, &cap, sizeof *list.items);
+ * Doubles the capacity and copies; the old array stays in the arena until exit.
+ */
+void *arena_grow(Arena *a, void *items, size_t len, size_t *cap, size_t elem_size);
+
+/* "/usr/bin/firefox" -> "firefox" */
+const char *path_base(const char *path);
+
 #endif

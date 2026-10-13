@@ -1,6 +1,8 @@
 #include <stdio.h>
+#include <unistd.h>
 
 #include "apps.h"
+#include "desktop.h"
 #include "docker.h"
 #include "ports.h"
 #include "procfs.h"
@@ -12,12 +14,16 @@ int main(void)
     Arena *a = arena_new(1 << 16);     // 64 KB blocks
 
     ProcList procs = procfs_scan(a, "/proc");
-    // TEMP: check step 1a
-    printf("%zu processes\n", procs.len);
-    for (size_t i = 0; i < procs.len; i += procs.len / 8)
-        printf("  pid %-6d ppid %-6d uid %-5d rss %-8ld %-16s %.50s\n", procs.items[i].pid,
-               procs.items[i].ppid, procs.items[i].uid, procs.items[i].rss_kb,
-               procs.items[i].comm, procs.items[i].cmdline);
+    // TEMP: check step 1b
+    DesktopIndex desk = desktop_load(a, desktop_default_dirs(a));
+    printf("%zu desktop keys\n", desk.len);
+    for (size_t i = 0; i < procs.len; i++) {
+        const DesktopEntry *e = desktop_match(&desk, &procs.items[i]);
+        if (e && procs.items[i].uid == (int)getuid())
+            printf("  %-6d ppid %-6d %-16s -> %s%s\n", procs.items[i].pid, procs.items[i].ppid,
+                   procs.items[i].comm, e->name, e->terminal ? " (terminal)" : "");
+    }
+
     AppList apps = apps_build(a, &procs);
     PortList ports = ports_scan(a, "/proc", &procs);
     ContainerList containers = docker_list(a);

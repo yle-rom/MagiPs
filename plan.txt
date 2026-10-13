@@ -16,16 +16,30 @@ PRINCIPLES
   - Small, tested modules.
 
 WHAT WE TRACK
-  apps        top-level user apps, children rolled up (count, mem)
+  apps        things with a window: firefox, spotify, alacritty -> nvim
+              rule: your process whose executable matches a .desktop file
+              (freedesktop standard: works on any compositor, X11, any distro)
+              children rolled up (count, mem)
+  services    everything running under the hood, for inspection
+              user:   your processes that are not apps (waybar, mako,
+                      wireplumber, syncthing)
+              system: system.slice/*.service from /proc/<pid>/cgroup
+                      (docker, libvirtd), minus an "essentials" list
+                      (systemd-*, dbus, NetworkManager, udev, logind...)
   containers  running docker containers (name, image, ports, status)
   ports       listening TCP/UDP sockets -> pid/process
-  databases   mongod, mariadbd/mysqld, postgres, redis... (native or docker)
+
+  always hidden: kernel threads (ppid 2), PID 1
+
+  caveat: an app without a .desktop file shows under services
+          (fix later with a config option)
 
   ideas (pick later):
-  services    systemd user/system services, incl. FAILED ones
+  databases   mongod, mariadbd, postgres, redis... (native or docker)
   dev servers node/python/java processes + their project dir (/proc/pid/cwd)
   orphans     dev processes re-parented to PID 1 after their terminal closed
   zombies     defunct processes and which parent isn't reaping them
+  failed      systemd services that crashed
   sessions    tmux/screen sessions, ssh logins
   tunnels     ssh port-forwards, VPN/wireguard interfaces
   vms         libvirt/qemu guests
@@ -34,16 +48,19 @@ WHAT WE TRACK
 
 STAGES
   0. skeleton            Makefile, main.c, debug build          [done]
-  1. MVP                 apps + containers + ports, table output
-       1a procfs         read /proc/<pid>/stat,status,cmdline
-       1b apps           build tree, find roots, roll up, filter
-       1c ports          /proc/net/tcp{,6} + fd inode -> pid
-       1d docker         `docker ps --format` via popen
-       1e table          aligned columns
-       1f tests          fixture /proc + assert harness
+  1. MVP                 apps + services + containers + ports
+       1a procfs         read /proc/<pid>/stat,status,cmdline      [done]
+       1b desktop        index .desktop files -> set of app executables
+       1c classify       per process: app / service / hidden (cgroup, uid)
+       1d apps           roll children up under each app, terminal -> job
+       1e services       user + system, essentials filter
+       1f ports          /proc/net/tcp{,6} + fd inode -> pid
+       1g docker         `docker ps --format` via popen
+       1h table          aligned columns
+       1i tests          fixture /proc + assert harness
   2. kill                proc kill <pid|name|port>, whole tree,
                          TERM -> KILL, confirm, protect PID 1/shell
-  3. databases/services  name + port + image detection,
+  3. databases           name + port + image detection,
                          kill via systemctl / docker stop
   4. polish              --json, --sort, --all, find <name>, colors,
                          config file (custom signatures)

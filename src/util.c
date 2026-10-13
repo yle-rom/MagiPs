@@ -69,3 +69,19 @@ void arena_free(Arena *a)
     }
     free(a);
 }
+
+void *arena_grow(Arena *a, void *items, size_t len, size_t *cap, size_t elem_size)
+{
+    size_t new_cap = *cap ? *cap * 2 : 16;
+    void *bigger = arena_alloc(a, new_cap * elem_size);
+    if (len)
+        memcpy(bigger, items, len * elem_size);
+    *cap = new_cap;
+    return bigger;
+}
+
+const char *path_base(const char *path)
+{
+    const char *slash = strrchr(path, '/');
+    return slash ? slash + 1 : path;
+}

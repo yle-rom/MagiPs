@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 /* "1234" -> 1234, anything else ("self", "net", ...) -> -1 */
 static int parse_pid(const char *name)
@@ -26,7 +27,7 @@ static int parse_pid(const char *name)
  */
 static int parse_stat(const char *root, int pid, Proc *p)
 {
-    char path[64];
+    char path[512];
     snprintf(path, sizeof path, "%s/%d/stat", root, pid);
 
     FILE *f = fopen(path, "r");
@@ -69,7 +70,7 @@ static int parse_stat(const char *root, int pid, Proc *p)
  */
 static int parse_status(const char *root, int pid, Proc *p)
 {
-    char path[64];
+    char path[512];
     snprintf(path, sizeof path, "%s/%d/status", root, pid);
 
     FILE *f = fopen(path, "r");
@@ -94,7 +95,7 @@ static int parse_status(const char *root, int pid, Proc *p)
  */
 static char *read_cmdline(Arena *a, const char *root, int pid)
 {
-    char path[64];
+    char path[512];
     snprintf(path, sizeof path, "%s/%d/cmdline", root, pid);
 
     char buf[4096];
@@ -115,18 +116,54 @@ static char *read_cmdline(Arena *a, const char *root, int pid)
     return arena_strdup(a, buf);
 }
 
-/* Append an empty slot, doubling capacity when full. */
-static Proc *push(Arena *a, ProcList *list, size_t *cap)
+/*
+ * <root>/<pid>/exe is a symlink to the program binary ("/usr/bin/firefox").
+ * Only readable for your own processes; others get "".
+ */
+static char *read_exe(Arena *a, const char *root, int pid)
 {
-    if (list->len == *cap) {
-        size_t new_cap = *cap ? *cap * 2 : 256;
-        Proc *items = arena_alloc(a, new_cap * sizeof *items);
-        if (list->len)
-            memcpy(items, list->items, list->len * sizeof *items);
-        list->items = items;    // old array stays in the arena until exit
-        *cap = new_cap;
+    char path[512], buf[4096];
+    snprintf(path, sizeof path, "%s/%d/exe", root, pid);
+
+    ssize_t n = readlink(path, buf, sizeof buf - 1);
+    if (n < 0)
+        n = 0;
+    buf[n] = '\0';
+
+    // binary replaced by an update while running: "/usr/bin/foo (deleted)"
+    char *del = strstr(buf, " (deleted)");
+    if (del && del[10] == '\0')
+        *del = '\0';
+
+    return arena_strdup(a, buf);
+}
+
+/*
+ * <root>/<pid>/cgroup says which group systemd filed the process in, e.g.
+ * "0::/user.slice/user-1000.slice/user@1000.service/app.slice/syncthing.service".
+ * cgroup v2 has one "0::" line; older hybrid setups also have "name=systemd".
+ * Returns the path part, or "" if unknown.
+ */
+static char *read_cgroup(Arena *a, const char *root, int pid)
+{
+    char path[512], line[1024], found[1024] = "";
+    snprintf(path, sizeof path, "%s/%d/cgroup", root, pid);
+
+    FILE *f = fopen(path, "r");
+    if (f) {
+        while (fgets(line, sizeof line, f)) {
+            line[strcspn(line, "\n")] = '\0';
+            char *v1 = strstr(line, ":name=systemd:");
+            if (strncmp(line, "0::", 3) == 0) {
+                snprintf(found, sizeof found, "%s", line + 3);
+                break;
+            } else if (v1) {
+                snprintf(found, sizeof found, "%s", v1 + 14);
+            }
+        }
+        fclose(f);
     }
-    return &list->items[list->len++];
+    return arena_strdup(a, found);
 }
 
 ProcList procfs_scan(Arena *a, const char *root)
@@ -148,10 +185,29 @@ ProcList procfs_scan(Arena *a, const char *root)
         if (parse_stat(root, pid, &p) < 0 || parse_status(root, pid, &p) < 0)
             continue;                   // vanished mid-scan: skip
         p.cmdline = read_cmdline(a, root, pid);
+        p.exe = read_exe(a, root, pid);
+        p.cgroup = read_cgroup(a, root, pid);
 
-        *push(a, &list, &cap) = p;
+        if (list.len == cap)
+            list.items = arena_grow(a, list.items, list.len, &cap, sizeof *list.items);
+        list.items[list.len++] = p;
     }
 
     closedir(dir);
     return list;
+}
+
+double procfs_uptime(const char *root)
+{
+    char path[512];
+    snprintf(path, sizeof path, "%s/uptime", root);
+
+    double up = 0;
+    FILE *f = fopen(path, "r");
+    if (f) {
+        if (fscanf(f, "%lf", &up) != 1)
+            up = 0;
+        fclose(f);
+    }
+    return up;
 }
