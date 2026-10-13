@@ -123,21 +123,21 @@ static Menu build_menu(Arena *a, const Snapshot *s)
     for (size_t i = 0; i < s->apps->len; i++) {
         const App *app = &s->apps->items[i];
         PickItem item = { TAB_APPS, { app->name, "app", arena_printf(a, "%d", app->pid),
-                          arena_printf(a, "%zu procs  %s", app->members.len,
-                                       format_mem(a, app->mem_kb)) } };
+                          arena_printf(a, "%3zu procs", app->members.len),
+                          format_mem(a, app->mem_kb) } };
         menu_add(a, &m, item, app_action(app));
     }
     for (size_t i = 0; i < s->services->len; i++) {
         const Service *sv = &s->services->items[i];
         PickItem item = { TAB_SERVICES, { sv->name, sv->scope == SCOPE_SYSTEM ? "system" : "user",
                           arena_printf(a, "%d", sv->pid),
-                          arena_printf(a, "%zu procs  %s", sv->members.len,
-                                       format_mem(a, sv->mem_kb)) } };
+                          arena_printf(a, "%3zu procs", sv->members.len),
+                          format_mem(a, sv->mem_kb) } };
         menu_add(a, &m, item, service_action(a, sv));
     }
     for (size_t i = 0; i < s->containers->len; i++) {
         const Container *c = &s->containers->items[i];
-        PickItem item = { TAB_CONTAINERS, { c->name, "container", "-", c->image } };
+        PickItem item = { TAB_CONTAINERS, { c->name, "container", "-", c->status, c->image } };
         menu_add(a, &m, item, container_action(a, c));
     }
 
@@ -150,7 +150,7 @@ static Menu build_menu(Arena *a, const Snapshot *s)
             continue;                               // system plumbing: not listed
         PickItem item = { TAB_PORTS, { arena_printf(a, ":%d", sums[i].port), "port",
                           sums[i].pid >= 0 ? arena_printf(a, "%d", sums[i].pid) : "-",
-                          arena_printf(a, "%s  (%s)", owner, port_reach_label(&sums[i])) } };
+                          port_reach_label(&sums[i]), owner } };
         menu_add(a, &m, item, act);
     }
     return m;

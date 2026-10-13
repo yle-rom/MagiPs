@@ -21,7 +21,6 @@
 
 #define MAX_VISIBLE 12
 #define MAX_QUERY   64
-#define MAX_COL     28          // longer cells end in "…"
 
 enum {
     KEY_NONE = 0,
@@ -156,27 +155,68 @@ static void put_cut(const char *s, size_t max)
     }
 }
 
-/* Append cell to row, padded or cut to exactly width characters. */
+/* Pointer to the n-th character (not byte) of s, or its end. */
+static const char *char_at(const char *s, size_t n)
+{
+    size_t chars = 0;
+    for (; *s; s++)
+        if (((unsigned char)*s & 0xC0) != 0x80 && chars++ == n)
+            return s;
+    return s;
+}
+
+static size_t put_bytes(char *row, size_t len, size_t size, const char *s, size_t n)
+{
+    if (len + n + 1 > size)
+        n = size - len - 1;
+    memcpy(row + len, s, n);
+    return len + n;
+}
+
+/*
+ * Append cell to row, padded or cut to exactly width characters.
+ * Cuts in the middle ("kotsistravel…app-demo-1"): the end of a name is
+ * usually what tells similar ones apart.
+ */
 static size_t put_cell(char *row, size_t len, size_t size, const char *cell, size_t width)
 {
-    size_t chars = 0, w = text_width(cell);
-    for (const char *s = cell; *s && len + 4 < size; s++) {
-        bool starts_char = ((unsigned char)*s & 0xC0) != 0x80;
-        if (starts_char && w > width && chars == width - 1)
-            break;                                  // leave room for the ellipsis
-        if (starts_char)
-            chars++;
-        row[len++] = *s;
+    size_t w = text_width(cell), chars = w;
+    if (w <= width) {
+        len = put_bytes(row, len, size, cell, strlen(cell));
+    } else if (width > 0) {
+        size_t head = (width - 1) / 2, tail = width - 1 - head;
+        const char *tail_start = char_at(cell, w - tail);
+        len = put_bytes(row, len, size, cell, (size_t)(char_at(cell, head) - cell));
+        len = put_bytes(row, len, size, "…", 3);   // 3 bytes, 1 character
+        len = put_bytes(row, len, size, tail_start, strlen(tail_start));
+        chars = width;
+    } else {
+        chars = 0;
     }
-    if (w > width && len + 4 < size) {
-        memcpy(row + len, "…", 3);                  // 3 bytes, 1 character
-        len += 3;
-        chars++;
-    }
-    while (chars++ < width && len + 1 < size)
+    for (; chars < width && len + 1 < size; chars++)
         row[len++] = ' ';
     row[len] = '\0';
     return len;
+}
+
+/*
+ * Fit the columns into the terminal. The last column (image, owner...) just
+ * gets cut at the screen edge; the others keep their natural width, except
+ * the name column, which shrinks (down to 12) if even they don't fit.
+ */
+static void fit_widths(const size_t *natural, size_t *out, size_t term)
+{
+    const size_t prefix = 2, gap = 2, min_name = 12, min_last = 8;
+    size_t total = prefix + min_last;
+    for (int c = 0; c < PICK_COLS; c++) {
+        out[c] = natural[c];
+        if (c < PICK_COLS - 1)
+            total += natural[c] + gap;
+    }
+    if (total > term && out[0] > min_name) {
+        size_t over = total - term;
+        out[0] = out[0] > over + min_name ? out[0] - over : min_name;
+    }
 }
 
 typedef struct {
@@ -184,7 +224,7 @@ typedef struct {
     size_t n;
     const char *const *tabs;
     int ntabs;
-    size_t width[PICK_COLS];        // column widths over all items
+    size_t width[PICK_COLS];        // natural column widths over all items
 
     int tab;
     char query[MAX_QUERY];
@@ -244,7 +284,10 @@ static void draw(Picker *p)
     if (p->sel >= p->scroll + visible)
         p->scroll = p->sel - visible + 1;
 
-    char row[512];
+    size_t width[PICK_COLS];
+    fit_widths(p->width, width, max);
+
+    char row[1024];
     for (size_t v = 0; v < visible; v++) {
         size_t idx = p->shown[p->scroll + v];
         const PickItem *it = &p->items[idx];
@@ -253,7 +296,7 @@ static void draw(Picker *p)
         for (int c = 0; c < PICK_COLS; c++) {
             const char *cell = it->cols[c] ? it->cols[c] : "";
             bool last = c == PICK_COLS - 1;
-            len = put_cell(row, len, sizeof row, cell, last ? text_width(cell) : p->width[c]);
+            len = put_cell(row, len, sizeof row, cell, last ? text_width(cell) : width[c]);
             if (!last)
                 len = put_cell(row, len, sizeof row, "", 2);        // gap
         }
@@ -297,7 +340,7 @@ int picker_run(const PickItem *items, size_t n, const char *const *tabs, int nta
         for (int c = 0; c < PICK_COLS; c++) {
             size_t w = items[i].cols[c] ? text_width(items[i].cols[c]) : 0;
             if (w > p.width[c])
-                p.width[c] = w < MAX_COL ? w : MAX_COL;
+                p.width[c] = w;
         }
 
     fputs(HIDE_CURSOR, stdout);

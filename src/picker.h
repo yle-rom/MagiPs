@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define PICK_COLS 4
+#define PICK_COLS 5
 
 /* One selectable row. tab is 1..ntabs-1 (tab 0 is "All"). */
 typedef struct {
