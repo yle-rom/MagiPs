@@ -1,4 +1,5 @@
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -97,37 +98,57 @@ static void print_containers(Arena *a, const ContainerList *containers)
     table_print(t);
 }
 
-/* Who owns a port: the process if we can see it, else a container publishing it. */
-static const char *port_owner(Arena *a, const Port *p, const Tree *tree,
-                              const ContainerList *containers)
-{
-    if (p->pid >= 0) {
-        size_t i = tree_find(tree, p->pid);
-        return i != TREE_NONE ? tree->procs->items[i].comm : "?";
-    }
-    int c = docker_find_port(containers, p->port);
-    if (c >= 0)
-        return fmt(a, "docker: %s", containers->items[c].name);
-    return "? (not yours, try sudo)";
-}
-
+/*
+ * One row per port number (tcp + tcp6, several addresses -> merged).
+ * Ports we can't attribute to a process or container are system plumbing:
+ * hidden, only counted.
+ */
 static void print_ports(Arena *a, const PortList *ports, const Tree *tree,
                         const ContainerList *containers)
 {
-    const char *cols[] = { "PORT", "PROTO", "ADDRESS", "PID", "PROCESS" };
-    Table *t = table_new(a, "PORTS", 5, cols);
-    for (size_t i = 0; i < ports->len; i++) {
-        const Port *p = &ports->items[i];
+    const char *cols[] = { "PORT", "OPEN TO", "PID", "OWNER" };
+    Table *t = table_new(a, "PORTS", 4, cols);
+    size_t hidden = 0;
+
+    for (size_t i = 0; i < ports->len;) {
+        int port = ports->items[i].port;
+        int pid = -1;
+        bool network = false, local = true;
+        const char *addr = NULL;
+        for (; i < ports->len && ports->items[i].port == port; i++) {      // sorted by port
+            const Port *p = &ports->items[i];
+            if (pid < 0)
+                pid = p->pid;
+            Reach r = port_reach(p);
+            network |= r == REACH_NETWORK;
+            local &= r == REACH_LOCAL;
+            if (r == REACH_ADDRESS && !addr)
+                addr = p->addr;
+        }
+
+        const char *owner = NULL;
+        if (pid >= 0) {
+            size_t idx = tree_find(tree, pid);
+            owner = idx != TREE_NONE ? tree->procs->items[idx].comm : "?";
+        } else {
+            int c = docker_find_port(containers, port);
+            if (c >= 0)
+                owner = fmt(a, "docker: %s", containers->items[c].name);
+        }
+        if (!owner) {
+            hidden++;
+            continue;
+        }
+
         const char *row[] = {
-            fmt(a, "%d", p->port),
-            p->proto,
-            p->addr,
-            p->pid >= 0 ? fmt(a, "%d", p->pid) : "-",
-            port_owner(a, p, tree, containers),
+            fmt(a, "%d", port),
+            network ? "network" : local ? "this pc" : addr,
+            pid >= 0 ? fmt(a, "%d", pid) : "-",
+            owner,
         };
         table_row(t, row);
     }
-    table_print(t);
+    table_print_note(t, hidden ? fmt(a, "(%zu system ports hidden)", hidden) : NULL);
 }
 
 int main(void)

@@ -67,13 +67,20 @@ static void print_line(const Table *t, const char **cells)
 
 void table_print(const Table *t)
 {
+    table_print_note(t, NULL);
+}
+
+void table_print_note(const Table *t, const char *note)
+{
     printf("%s\n", t->title);
     if (t->nrows == 0) {
-        printf(INDENT "(none)\n\n");
-        return;
+        printf(INDENT "(none)\n");
+    } else {
+        print_line(t, t->headers);
+        for (size_t r = 0; r < t->nrows; r++)
+            print_line(t, t->rows[r]);
     }
-    print_line(t, t->headers);
-    for (size_t r = 0; r < t->nrows; r++)
-        print_line(t, t->rows[r]);
+    if (note)
+        printf(INDENT "%s\n", note);
     putchar('\n');
 }

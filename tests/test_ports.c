@@ -19,5 +19,10 @@ void test_ports(void)
         CHECK_STR(ports.items[1].addr, "::1");
         CHECK(ports.items[1].pid == 200);
     }
+
+    Port local = { .addr = "127.0.0.1" }, any = { .addr = "::" }, bridge = { .addr = "192.168.122.1" };
+    CHECK(port_reach(&local) == REACH_LOCAL);
+    CHECK(port_reach(&any) == REACH_NETWORK);
+    CHECK(port_reach(&bridge) == REACH_ADDRESS);
     arena_free(a);
 }

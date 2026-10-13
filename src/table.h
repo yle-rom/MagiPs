@@ -14,4 +14,7 @@ void   table_row(Table *t, const char **cells);
 /* Title, then headers and rows padded to the widest cell of each column. */
 void   table_print(const Table *t);
 
+/* Same, with an extra line under the rows (NULL = none). */
+void   table_print_note(const Table *t, const char *note);
+
 #endif

@@ -157,3 +157,12 @@ PortList ports_scan(Arena *a, const char *root, const ProcList *procs)
         qsort(list.items, list.len, sizeof *list.items, cmp_port);
     return list;
 }
+
+Reach port_reach(const Port *p)
+{
+    if (strcmp(p->addr, "0.0.0.0") == 0 || strcmp(p->addr, "::") == 0)
+        return REACH_NETWORK;
+    if (strncmp(p->addr, "127.", 4) == 0 || strcmp(p->addr, "::1") == 0)
+        return REACH_LOCAL;
+    return REACH_ADDRESS;
+}
