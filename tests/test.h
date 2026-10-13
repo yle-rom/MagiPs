@@ -30,5 +30,6 @@ void test_ports(void);
 void test_config(void);
 void test_db(void);
 void test_devserver(void);
+void test_json(void);
 
 #endif
