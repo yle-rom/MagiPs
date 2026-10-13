@@ -133,7 +133,7 @@ static void load_file(Arena *a, DesktopIndex *d, size_t *cap, const char *path)
             continue;
 
         if (strncmp(line, "Name=", 5) == 0)
-            snprintf(name, sizeof name, "%s", line + 5);
+            snprintf(name, sizeof name, "%.255s", line + 5);    // cut long names
         else if (strncmp(line, "Exec=", 5) == 0)
             snprintf(exec, sizeof exec, "%s", line + 5);
         else if (strcmp(line, "Type=Application") == 0)
