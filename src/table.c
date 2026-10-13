@@ -15,13 +15,26 @@ struct Table {
     size_t *width;              // widest cell per column, in characters
 };
 
-/* Characters, not bytes: "→" is 3 bytes in UTF-8 but 1 column on screen. */
+/*
+ * Columns on screen, not bytes: "→" is 3 bytes in UTF-8 but 1 column, and
+ * color codes ("\x1b[33m") take no space at all.
+ */
 static size_t text_width(const char *s)
 {
     size_t n = 0;
-    for (; *s; s++)
+    while (*s) {
+        if (*s == '\x1b' && s[1] == '[') {           // skip ESC [ ... letter
+            s += 2;
+            while (*s && !((*s >= 'A' && *s <= 'Z') || (*s >= 'a' && *s <= 'z')))
+                s++;
+            if (*s)
+                s++;
+            continue;
+        }
         if (((unsigned char)*s & 0xC0) != 0x80)     // skip UTF-8 continuation bytes
             n++;
+        s++;
+    }
     return n;
 }
 
@@ -52,11 +65,11 @@ void table_row(Table *t, const char **cells)
     t->rows[t->nrows++] = row;
 }
 
-static void print_line(const Table *t, const char **cells)
+static void print_line(const Table *t, const char **cells, const char *style)
 {
     fputs(INDENT, stdout);
     for (int c = 0; c < t->ncols; c++) {
-        fputs(cells[c], stdout);
+        fputs(style ? paint(t->a, style, cells[c]) : cells[c], stdout);
         if (c < t->ncols - 1) {
             size_t pad = t->width[c] - text_width(cells[c]) + GAP;
             printf("%*s", (int)pad, "");
@@ -72,15 +85,15 @@ void table_print(const Table *t)
 
 void table_print_note(const Table *t, const char *note)
 {
-    printf("%s\n", t->title);
+    printf("%s\n", paint(t->a, STYLE_TITLE, t->title));
     if (t->nrows == 0) {
-        printf(INDENT "(none)\n");
+        printf(INDENT "%s\n", paint(t->a, STYLE_DIM, "(none)"));
     } else {
-        print_line(t, t->headers);
+        print_line(t, t->headers, STYLE_DIM);
         for (size_t r = 0; r < t->nrows; r++)
-            print_line(t, t->rows[r]);
+            print_line(t, t->rows[r], NULL);
     }
     if (note)
-        printf(INDENT "%s\n", note);
+        printf(INDENT "%s\n", paint(t->a, STYLE_DIM, note));
     putchar('\n');
 }

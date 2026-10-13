@@ -32,6 +32,17 @@ static const char *format_age(Arena *a, unsigned long long start, double uptime)
     return arena_printf(a, "%lds", secs < 0 ? 0 : secs);
 }
 
+/* Memory: yellow from 1 GB, red from 4 GB. */
+static const char *paint_mem(Arena *a, long kb)
+{
+    const char *text = format_mem(a, kb);
+    if (kb >= 4L * 1024 * 1024)
+        return paint(a, STYLE_BAD, text);
+    if (kb >= 1024L * 1024)
+        return paint(a, STYLE_WARN, text);
+    return text;
+}
+
 static void print_apps(Arena *a, const AppList *apps, double uptime)
 {
     const char *cols[] = { "APP", "PID", "PROCS", "MEM", "UPTIME" };
@@ -39,10 +50,10 @@ static void print_apps(Arena *a, const AppList *apps, double uptime)
     for (size_t i = 0; i < apps->len; i++) {
         const App *app = &apps->items[i];
         const char *row[] = {
-            app->name,
+            paint(a, STYLE_BOLD, app->name),
             arena_printf(a, "%d", app->pid),
             arena_printf(a, "%zu", app->members.len),
-            format_mem(a, app->mem_kb),
+            paint_mem(a, app->mem_kb),
             format_age(a, app->start, uptime),
         };
         table_row(t, row);
@@ -58,10 +69,10 @@ static void print_services(Arena *a, const ServiceList *services, double uptime)
         const Service *s = &services->items[i];
         const char *row[] = {
             s->name,
-            s->scope == SCOPE_SYSTEM ? "system" : "user",
+            s->scope == SCOPE_SYSTEM ? paint(a, STYLE_INFO, "system") : "user",
             arena_printf(a, "%d", s->pid),
             arena_printf(a, "%zu", s->members.len),
-            format_mem(a, s->mem_kb),
+            paint_mem(a, s->mem_kb),
             format_age(a, s->start, uptime),
         };
         table_row(t, row);
@@ -89,7 +100,8 @@ static void print_databases(Arena *a, const DatabaseList *dbs, const ContainerLi
         const Database *d = &dbs->items[i];
         guessed |= d->guessed;
         const char *row[] = {
-            d->guessed ? arena_printf(a, "%s?", d->engine) : d->engine,
+            d->guessed ? paint(a, STYLE_WARN, arena_printf(a, "%s?", d->engine))
+                       : paint(a, STYLE_BOLD, d->engine),
             db_where(a, d, containers),
             d->pid >= 0 ? arena_printf(a, "%d", d->pid) : "-",
             !d->port ? "-" : d->port_internal ? arena_printf(a, "%d (internal)", d->port)
@@ -106,7 +118,9 @@ static void print_containers(Arena *a, const ContainerList *containers)
     Table *t = table_new(a, "CONTAINERS", 4, cols);
     for (size_t i = 0; i < containers->len; i++) {
         const Container *c = &containers->items[i];
-        const char *row[] = { c->name, c->image, c->ports, c->status };
+        bool trouble = strstr(c->status, "unhealthy") || strstr(c->status, "Restarting");
+        const char *status = paint(a, trouble ? STYLE_BAD : STYLE_GOOD, c->status);
+        const char *row[] = { paint(a, STYLE_BOLD, c->name), c->image, c->ports, status };
         table_row(t, row);
     }
     table_print(t);
@@ -141,7 +155,8 @@ static void print_ports(Arena *a, const PortList *ports, const Tree *tree,
         }
         const char *row[] = {
             arena_printf(a, "%d", sums[i].port),
-            port_reach_label(&sums[i]),
+            sums[i].reach == REACH_NETWORK ? paint(a, STYLE_WARN, "network")   // reachable by others
+                                           : port_reach_label(&sums[i]),
             sums[i].pid >= 0 ? arena_printf(a, "%d", sums[i].pid) : "-",
             owner,
         };
@@ -152,9 +167,10 @@ static void print_ports(Arena *a, const PortList *ports, const Tree *tree,
 
 static void usage(FILE *out)
 {
-    fputs("usage: whatsup [-i]\n"
-          "  (no option)  print apps, services, containers and ports\n"
+    fputs("usage: whatsup [-i] [--no-color]\n"
+          "  (no option)  print apps, services, databases, containers and ports\n"
           "  -i           interactive: pick things and stop them (esc to quit)\n"
+          "  --no-color   plain output (also: NO_COLOR=1, or piping to a file)\n"
           "  -h           this help\n"
           "config: ~/.config/whatsup/config (created on first run)\n", out);
 }
@@ -213,10 +229,12 @@ static int interactive_loop(void)
 
 int main(int argc, char **argv)
 {
-    bool interactive = false;
+    bool interactive = false, color = true;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--interactive") == 0) {
             interactive = true;
+        } else if (strcmp(argv[i], "--no-color") == 0) {
+            color = false;
         } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             usage(stdout);
             return 0;
@@ -226,6 +244,7 @@ int main(int argc, char **argv)
             return 2;
         }
     }
+    style_init(color);
     if (interactive)
         return interactive_loop();
 

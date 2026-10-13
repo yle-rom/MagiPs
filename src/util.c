@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 typedef struct Block Block;
 struct Block {
@@ -104,4 +105,21 @@ const char *format_mem(Arena *a, long kb)
     if (kb >= 1024)
         return arena_printf(a, "%ldM", kb / 1024);
     return arena_printf(a, "%ldK", kb);
+}
+
+static bool colors;
+
+void style_init(bool allowed)
+{
+    const char *no_color = getenv("NO_COLOR");      // https://no-color.org
+    const char *term = getenv("TERM");
+    colors = allowed && isatty(STDOUT_FILENO) && !(no_color && *no_color) &&
+             !(term && strcmp(term, "dumb") == 0);
+}
+
+const char *paint(Arena *a, const char *style, const char *text)
+{
+    if (!colors)
+        return text;
+    return arena_printf(a, "\x1b[%sm%s\x1b[0m", style, text);
 }
