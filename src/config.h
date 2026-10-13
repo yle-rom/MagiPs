@@ -10,7 +10,7 @@ typedef struct {
     size_t len, cap;
 } StrList;
 
-/* ~/.config/magisc/config: the lists that decide what's shown. */
+/* ~/.config/magips/config: the lists that decide what's shown. */
 typedef struct {
     StrList hide_system;        // system services needed for the machine to work
     StrList hide_user;          // your desktop plumbing (portals, dbus...)
@@ -22,7 +22,7 @@ typedef struct {
 extern const char config_default_text[];
 
 /*
- * Read $XDG_CONFIG_HOME/magisc/config (default ~/.config/magisc/config).
+ * Read $XDG_CONFIG_HOME/magips/config (default ~/.config/magips/config).
  * If it doesn't exist, write config_default_text there first.
  */
 Config config_load(Arena *a);

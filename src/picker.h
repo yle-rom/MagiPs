@@ -10,11 +10,14 @@
 typedef struct {
     int tab;
     const char *cols[PICK_COLS];
+    const char *style[PICK_COLS];   // STYLE_* color per cell, or NULL
 } PickItem;
 
 /*
- * fzf-style picker drawn under the prompt: type to filter, Tab switches
- * section, arrows move, Enter picks, Esc quits. Erases itself when done.
+ * Picker drawn under the prompt, with vim-style keys:
+ *   j/k move, h/l switch section, g/G top/bottom, Enter picks, q quits,
+ *   / search (type to filter; Enter keeps the filter, Esc clears it).
+ * Arrows, Tab/Shift-Tab and Ctrl-n/p work too. Erases itself when done.
  * *tab is the section to start on, and is updated to where the user left it.
  * Returns the chosen item's index, or -1 if cancelled / not a terminal.
  */

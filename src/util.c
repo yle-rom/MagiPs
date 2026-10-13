@@ -123,3 +123,17 @@ const char *paint(Arena *a, const char *style, const char *text)
         return text;
     return arena_printf(a, "\x1b[%sm%s\x1b[0m", style, text);
 }
+
+bool style_on(void)
+{
+    return colors;
+}
+
+const char *mem_style(long kb)
+{
+    if (kb >= 4L * 1024 * 1024)
+        return STYLE_BAD;
+    if (kb >= 1024L * 1024)
+        return STYLE_WARN;
+    return NULL;
+}

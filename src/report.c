@@ -17,15 +17,10 @@ static const char *format_age(Arena *a, unsigned long long start, double uptime)
     return arena_printf(a, "%lds", secs < 0 ? 0 : secs);
 }
 
-/* Memory: yellow from 1 GB, red from 4 GB. */
 static const char *paint_mem(Arena *a, long kb)
 {
-    const char *text = format_mem(a, kb);
-    if (kb >= 4L * 1024 * 1024)
-        return paint(a, STYLE_BAD, text);
-    if (kb >= 1024L * 1024)
-        return paint(a, STYLE_WARN, text);
-    return text;
+    const char *style = mem_style(kb);
+    return style ? paint(a, style, format_mem(a, kb)) : format_mem(a, kb);
 }
 
 static void print_apps(Arena *a, const AppList *apps, double uptime)

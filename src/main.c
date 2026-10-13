@@ -9,22 +9,20 @@
 
 static void usage(FILE *out)
 {
-    fputs("usage: magisc [-i] [--json] [--no-color]\n"
-          "  (no option)  print apps, services, dev servers, databases, containers, ports\n"
-          "  -i           interactive: pick things and stop them (esc to quit)\n"
+    fputs("usage: magips [-s] [--json] [--no-color]\n"
+          "  (no option)  interactive: pick things and stop them\n"
+          "               j/k move  h/l section  / search  enter select  q quit\n"
+          "  -s           print apps, services, dev servers, databases, containers, ports\n"
+          "               (also used automatically when output isn't a terminal)\n"
           "  --json       everything as JSON, for scripts (includes hidden system ports)\n"
-          "  --no-color   plain output (also: NO_COLOR=1, or piping to a file)\n"
+          "  --no-color   plain output (also: NO_COLOR=1)\n"
           "  -h           this help\n"
-          "config: ~/.config/magisc/config (created on first run)\n", out);
+          "config: ~/.config/magips/config (created on first run)\n", out);
 }
 
-/* Pick, act, rescan, repeat until Esc. A fresh arena per round. */
+/* Pick, act, rescan, repeat until quit. A fresh arena per round. */
 static int interactive_loop(void)
 {
-    if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) {
-        fprintf(stderr, "magisc: interactive mode needs a terminal\n");
-        return 2;
-    }
     int tab = 0;
     for (;;) {
         Arena *a = arena_new(1 << 16);
@@ -39,10 +37,12 @@ static int interactive_loop(void)
 
 int main(int argc, char **argv)
 {
-    bool interactive = false, color = true, json = false;
+    bool print = false, color = true, json = false;
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--interactive") == 0) {
-            interactive = true;
+        if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--static") == 0) {
+            print = true;
+        } else if (strcmp(argv[i], "-i") == 0) {
+            print = false;                          // old flag: interactive is the default now
         } else if (strcmp(argv[i], "--no-color") == 0) {
             color = false;
         } else if (strcmp(argv[i], "--json") == 0) {
@@ -51,17 +51,16 @@ int main(int argc, char **argv)
             usage(stdout);
             return 0;
         } else {
-            fprintf(stderr, "magisc: unknown option '%s'\n", argv[i]);
+            fprintf(stderr, "magips: unknown option '%s'\n", argv[i]);
             usage(stderr);
             return 2;
         }
     }
     style_init(color && !json);
-    if (interactive && json) {
-        fprintf(stderr, "magisc: -i and --json don't go together\n");
-        return 2;
-    }
-    if (interactive)
+
+    // `magips | grep x` or `magips > file`: there's no one to pick, so print
+    bool terminal = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
+    if (!print && !json && terminal)
         return interactive_loop();
 
     Arena *a = arena_new(1 << 16);     // 64 KB blocks

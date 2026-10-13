@@ -8,6 +8,7 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
+#include "util.h"
 
 /* ANSI escape codes: the terminal reads these as commands, not text. */
 #define CSI         "\x1b["
@@ -18,6 +19,9 @@
 #define BOLD        CSI "1m"
 #define DIM         CSI "2m"
 #define RESET       CSI "0m"
+#define CELL_END    CSI "22;39m"    // end a cell's color but keep the line's background
+#define SEL_BG      CSI "48;5;236m" // selected line: dark grey background (256-color)
+#define TAB_ON      CSI "1;30;46m"  // selected section: black on cyan, like the titles
 
 #define MAX_VISIBLE 12
 #define MAX_QUERY   64
@@ -143,16 +147,33 @@ static size_t text_width(const char *s)
     return n;
 }
 
-/* Print at most max characters of s (lines must never wrap, or redraw breaks). */
-static void put_cut(const char *s, size_t max)
+/*
+ * Print at most max characters of s (lines must never wrap, or redraw
+ * breaks). Color codes are copied through but take no space. Returns the
+ * number of characters printed.
+ */
+static size_t put_cut(const char *s, size_t max)
 {
     size_t n = 0;
-    for (; *s; s++) {
+    while (*s) {
+        if (*s == '\x1b' && s[1] == '[') {
+            const char *end = s + 2;
+            while (*end && !((*end >= 'A' && *end <= 'Z') || (*end >= 'a' && *end <= 'z')))
+                end++;
+            if (*end)
+                end++;
+            fwrite(s, 1, (size_t)(end - s), stdout);
+            s = end;
+            continue;
+        }
         bool starts_char = ((unsigned char)*s & 0xC0) != 0x80;
-        if (starts_char && n++ == max)
+        if (starts_char && n++ == max) {
+            n--;
             break;
-        putchar(*s);
+        }
+        putchar(*s++);
     }
+    return n;
 }
 
 /* Pointer to the n-th character (not byte) of s, or its end. */
@@ -227,6 +248,7 @@ typedef struct {
     size_t width[PICK_COLS];        // natural column widths over all items
 
     int tab;
+    bool searching;                 // after '/': keys type into the filter
     char query[MAX_QUERY];
     size_t *shown;                  // indexes of items passing the filter
     size_t nshown, sel, scroll;
@@ -266,16 +288,26 @@ static void refilter(Picker *p)
 static void draw(Picker *p)
 {
     size_t max = (size_t)term_width() - 1;
+    bool color = style_on();
 
     if (p->drawn > 1)
         printf(CSI "%dA", p->drawn - 1);            // back to our first line
     printf("\r" CLEAR_DOWN);
     int lines = 0;
 
-    // tabs:  All  [Apps]  Services ...
-    for (int t = 0; t < p->ntabs; t++)
-        printf(t == p->tab ? REVERSE " %s " RESET " " : DIM " %s " RESET " ", p->tabs[t]);
-    printf("\n" BOLD "> " RESET "%s\n", p->query);
+    // section bar:  All  [Apps]  Services ...
+    for (int t = 0; t < p->ntabs; t++) {
+        const char *on = color ? TAB_ON : REVERSE;
+        printf(t == p->tab ? "%s %s " RESET " " : DIM " %s%s " RESET " ",
+               t == p->tab ? on : "", p->tabs[t]);
+    }
+    // search line: "/ spo▌" while typing, the kept filter (dim) otherwise
+    if (p->searching)
+        printf("\n" BOLD "/ " RESET "%s▌\n", p->query);
+    else if (p->query[0])
+        printf("\n" DIM "/ %s" RESET "\n", p->query);
+    else
+        printf("\n\n");
     lines += 2;
 
     size_t visible = p->nshown < MAX_VISIBLE ? p->nshown : MAX_VISIBLE;
@@ -287,22 +319,32 @@ static void draw(Picker *p)
     size_t width[PICK_COLS];
     fit_widths(p->width, width, max);
 
-    char row[1024];
+    char row[2048];
     for (size_t v = 0; v < visible; v++) {
-        size_t idx = p->shown[p->scroll + v];
-        const PickItem *it = &p->items[idx];
+        const PickItem *it = &p->items[p->shown[p->scroll + v]];
+        bool selected = p->scroll + v == p->sel;
         size_t len = 0;
         row[0] = '\0';
         for (int c = 0; c < PICK_COLS; c++) {
             const char *cell = it->cols[c] ? it->cols[c] : "";
             bool last = c == PICK_COLS - 1;
+            const char *style = color ? it->style[c] : NULL;
+            if (style)
+                len += (size_t)snprintf(row + len, sizeof row - len, CSI "%sm", style);
             len = put_cell(row, len, sizeof row, cell, last ? text_width(cell) : width[c]);
+            if (style)
+                len = put_bytes(row, len, sizeof row, CELL_END, strlen(CELL_END));
             if (!last)
                 len = put_cell(row, len, sizeof row, "", 2);        // gap
         }
-        bool selected = p->scroll + v == p->sel;
-        fputs(selected ? BOLD "▶ " : "  ", stdout);
-        put_cut(row, max - 2);
+
+        if (selected)
+            fputs(color ? SEL_BG BOLD CSI "36m▶ " CELL_END : REVERSE "▶ ", stdout);
+        else
+            fputs("  ", stdout);
+        size_t used = 2 + put_cut(row, max - 2);
+        if (selected)                               // background across the whole line
+            printf("%*s", (int)(max > used ? max - used : 0), "");
         fputs(RESET "\n", stdout);
         lines++;
     }
@@ -310,7 +352,9 @@ static void draw(Picker *p)
         fputs(DIM "  (no matches)" RESET "\n", stdout);
         lines++;
     }
-    printf(DIM "  %zu/%zu  ↑↓ move  tab section  enter select  esc quit" RESET, p->nshown, p->n);
+    printf(DIM "  %zu/%zu  %s" RESET, p->nshown, p->n,
+           p->searching ? "type to filter  enter keep  esc clear"
+                        : "j/k move  h/l section  / search  enter select  q quit");
     lines++;
 
     fflush(stdout);
@@ -352,34 +396,69 @@ int picker_run(const PickItem *items, size_t n, const char *const *tabs, int nta
         int key = read_key();
         size_t qlen = strlen(p.query);
 
-        if (key == KEY_ESC)
-            break;
-        if (key == KEY_ENTER) {
+        // keys that work the same in both modes
+        if (key == KEY_UP || key == KEY_DOWN) {
+            if (key == KEY_UP && p.sel > 0)
+                p.sel--;
+            if (key == KEY_DOWN && p.sel + 1 < p.nshown)
+                p.sel++;
+            continue;
+        }
+        if (key == KEY_TAB || key == KEY_BTAB) {
+            p.tab = (p.tab + (key == KEY_TAB ? 1 : ntabs - 1)) % ntabs;
+            refilter(&p);
+            continue;
+        }
+
+        if (p.searching) {
+            if (key == KEY_ENTER) {
+                p.searching = false;                // keep the filter, back to moving
+            } else if (key == KEY_ESC) {
+                p.searching = false;
+                p.query[0] = '\0';
+                refilter(&p);
+            } else if (key == KEY_BACKSPACE) {
+                if (qlen > 0) {
+                    p.query[qlen - 1] = '\0';
+                    refilter(&p);
+                }
+            } else if (key == KEY_CLEAR) {
+                p.query[0] = '\0';
+                refilter(&p);
+            } else if (key > 0 && key < 127 && qlen < MAX_QUERY - 1) {
+                p.query[qlen] = (char)key;
+                p.query[qlen + 1] = '\0';
+                refilter(&p);
+            }
+            continue;
+        }
+
+        // normal mode: vim motions
+        if (key == 'j') {
+            if (p.sel + 1 < p.nshown)
+                p.sel++;
+        } else if (key == 'k') {
+            if (p.sel > 0)
+                p.sel--;
+        } else if (key == 'l' || key == 'h') {
+            p.tab = (p.tab + (key == 'l' ? 1 : ntabs - 1)) % ntabs;
+            refilter(&p);
+        } else if (key == 'g') {
+            p.sel = 0;
+        } else if (key == 'G') {
+            p.sel = p.nshown ? p.nshown - 1 : 0;
+        } else if (key == '/') {
+            p.searching = true;
+        } else if (key == KEY_ENTER) {
             if (p.nshown > 0) {
                 result = (int)p.shown[p.sel];
                 break;
             }
-        } else if (key == KEY_UP) {
-            if (p.sel > 0)
-                p.sel--;
-        } else if (key == KEY_DOWN) {
-            if (p.sel + 1 < p.nshown)
-                p.sel++;
-        } else if (key == KEY_TAB || key == KEY_BTAB) {
-            p.tab = (p.tab + (key == KEY_TAB ? 1 : ntabs - 1)) % ntabs;
+        } else if (key == KEY_ESC && p.query[0]) {
+            p.query[0] = '\0';                     // Esc first drops a kept filter...
             refilter(&p);
-        } else if (key == KEY_BACKSPACE) {
-            if (qlen > 0) {
-                p.query[qlen - 1] = '\0';
-                refilter(&p);
-            }
-        } else if (key == KEY_CLEAR) {
-            p.query[0] = '\0';
-            refilter(&p);
-        } else if (key > 0 && key < 127 && qlen < MAX_QUERY - 1) {
-            p.query[qlen] = (char)key;
-            p.query[qlen + 1] = '\0';
-            refilter(&p);
+        } else if (key == 'q' || key == KEY_ESC) {
+            break;                                  // ...then quits
         }
     }
 

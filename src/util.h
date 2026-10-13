@@ -45,4 +45,10 @@ void style_init(bool allowed);
 /* text wrapped in the color, or text unchanged when colors are off. */
 const char *paint(Arena *a, const char *style, const char *text);
 
+/* Are colors on (after style_init)? */
+bool style_on(void);
+
+/* Color for a memory amount: yellow from 1 GB, red from 4 GB, else NULL. */
+const char *mem_style(long kb);
+
 #endif

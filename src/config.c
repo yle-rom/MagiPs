@@ -8,7 +8,7 @@
 #include <sys/stat.h>
 
 const char config_default_text[] =
-    "# magisc config. Edit freely; delete this file to get the defaults back.\n"
+    "# magips config. Edit freely; delete this file to get the defaults back.\n"
     "# One entry per line. * matches anything: \"systemd-*\" hides systemd-udevd,\n"
     "# systemd-logind... Names are systemd unit names (without .service) or\n"
     "# process names.\n"
@@ -103,14 +103,14 @@ Config config_parse(Arena *a, const char *text, const char *origin)
             else if (strcmp(item, "[apps]") == 0)
                 section = &cfg.apps;
             else {
-                fprintf(stderr, "magisc: %s:%d: unknown section %s (ignored)\n",
+                fprintf(stderr, "magips: %s:%d: unknown section %s (ignored)\n",
                         origin, lineno, item);
                 section = NULL;
             }
         } else if (section) {
             list_add(a, section, item);
         } else {
-            fprintf(stderr, "magisc: %s:%d: '%s' is not in a section (ignored)\n",
+            fprintf(stderr, "magips: %s:%d: '%s' is not in a section (ignored)\n",
                     origin, lineno, item);
         }
     }
@@ -155,9 +155,9 @@ Config config_load(Arena *a)
     const char *xdg = getenv("XDG_CONFIG_HOME");
     const char *home = getenv("HOME");
     if (xdg && *xdg)
-        snprintf(path, sizeof path, "%s/magisc/config", xdg);
+        snprintf(path, sizeof path, "%s/magips/config", xdg);
     else
-        snprintf(path, sizeof path, "%s/.config/magisc/config", home ? home : ".");
+        snprintf(path, sizeof path, "%s/.config/magips/config", home ? home : ".");
 
     char *text = read_all(a, path);
     if (!text && errno == ENOENT) {                 // first run: write the defaults
@@ -170,7 +170,7 @@ Config config_load(Arena *a)
         }
     }
     if (!text) {
-        fprintf(stderr, "magisc: can't read or create %s, using built-in defaults\n", path);
+        fprintf(stderr, "magips: can't read or create %s, using built-in defaults\n", path);
         return config_parse(a, config_default_text, "defaults");
     }
 

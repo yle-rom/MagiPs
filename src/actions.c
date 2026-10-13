@@ -143,7 +143,8 @@ static Menu build_menu(Arena *a, const World *s)
         const App *app = &s->apps.items[i];
         PickItem item = { TAB_APPS, { app->name, "app", arena_printf(a, "%d", app->pid),
                           arena_printf(a, "%3zu procs", app->members.len),
-                          format_mem(a, app->mem_kb) } };
+                          format_mem(a, app->mem_kb) },
+                          { STYLE_BOLD, STYLE_DIM, NULL, NULL, mem_style(app->mem_kb) } };
         menu_add(a, &m, item, app_action(app));
     }
     for (size_t i = 0; i < s->services.len; i++) {
@@ -151,14 +152,17 @@ static Menu build_menu(Arena *a, const World *s)
         PickItem item = { TAB_SERVICES, { sv->name, sv->scope == SCOPE_SYSTEM ? "system" : "user",
                           arena_printf(a, "%d", sv->pid),
                           arena_printf(a, "%3zu procs", sv->members.len),
-                          format_mem(a, sv->mem_kb) } };
+                          format_mem(a, sv->mem_kb) },
+                          { STYLE_BOLD, sv->scope == SCOPE_SYSTEM ? STYLE_INFO : STYLE_DIM, NULL,
+                            NULL, mem_style(sv->mem_kb) } };
         menu_add(a, &m, item, service_action(a, sv));
     }
     for (size_t i = 0; i < s->devservers.len; i++) {
         const DevServer *d = &s->devservers.items[i];
         PickItem item = { TAB_DEV, { d->project, d->orphaned ? "dev, orphaned" : "dev",
                           arena_printf(a, "%d", d->pid), arena_printf(a, ":%s", d->ports),
-                          d->command } };
+                          d->command },
+                          { STYLE_BOLD, d->orphaned ? STYLE_WARN : STYLE_DIM, NULL, NULL, NULL } };
         Action act = { .kind = ACT_KILL, .what = arena_printf(a, "%s in %s", d->command, d->project),
                        .members = &d->members };
         menu_add(a, &m, item, act);
@@ -173,12 +177,15 @@ static Menu build_menu(Arena *a, const World *s)
             d->pid >= 0 ? arena_printf(a, "%d", d->pid) : "-",
             !d->port ? "" : d->port_internal ? arena_printf(a, ":%d internal", d->port)
                                              : arena_printf(a, ":%d", d->port),
-            where } };
+            where },
+            { d->guessed ? STYLE_WARN : STYLE_BOLD, STYLE_DIM, NULL, NULL, NULL } };
         menu_add(a, &m, item, db_action(a, s, d));
     }
     for (size_t i = 0; i < s->containers.len; i++) {
         const Container *c = &s->containers.items[i];
-        PickItem item = { TAB_CONTAINERS, { c->name, "container", "-", c->status, c->image } };
+        bool trouble = strstr(c->status, "unhealthy") || strstr(c->status, "Restarting");
+        PickItem item = { TAB_CONTAINERS, { c->name, "container", "-", c->status, c->image },
+                          { STYLE_BOLD, STYLE_DIM, NULL, trouble ? STYLE_BAD : STYLE_GOOD, NULL } };
         menu_add(a, &m, item, container_action(a, c));
     }
 
@@ -191,7 +198,9 @@ static Menu build_menu(Arena *a, const World *s)
             continue;                               // system plumbing: not listed
         PickItem item = { TAB_PORTS, { arena_printf(a, ":%d", sums[i].port), "port",
                           sums[i].pid >= 0 ? arena_printf(a, "%d", sums[i].pid) : "-",
-                          port_reach_label(&sums[i]), owner } };
+                          port_reach_label(&sums[i]), owner },
+                          { STYLE_BOLD, STYLE_DIM, NULL,
+                            sums[i].reach == REACH_NETWORK ? STYLE_WARN : NULL, NULL } };
         menu_add(a, &m, item, act);
     }
     return m;

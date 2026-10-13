@@ -1,4 +1,4 @@
-MAGISC - plan
+MAGIPS - plan
 ======================
 
 GOAL
@@ -57,8 +57,8 @@ STAGES
        1g docker         `docker ps --format` via popen  [done]
        1h table          aligned columns  [done]
        1i tests          fixture /proc + assert harness  [done]
-  2. interactive         magisc -i: inline picker (type to filter, tab =
-                         section), stop the right way per kind:
+  2. interactive         magips (default; -s prints tables): picker with
+                         vim keys (j/k, h/l, / search), stop the right way per kind:
                          apps/own services: TERM -> KILL, whole group
                          containers: docker stop, user units: systemctl --user
                          system services: show the sudo command      [done]
@@ -66,7 +66,7 @@ STAGES
                          kill via systemctl / docker stop        [done]
      dev servers         listening dev processes + project dir,
                          orphan detection, Dev tab in -i            [done]
-     config              ~/.config/magisc/config: hide lists, [apps]  [done]
+     config              ~/.config/magips/config: hide lists, [apps]  [done]
   4. polish              colors [done]; --json, --all
   5. publish             README + demo gif, man page, CI, releases, AUR
   6. maybe               interactive TUI (ncurses), docker via socket,
