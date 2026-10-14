@@ -194,7 +194,7 @@ const char *port_reach_label(const PortSummary *s)
 {
     switch (s->reach) {
     case REACH_NETWORK: return "network";
-    case REACH_LOCAL:   return "this pc";
+    case REACH_LOCAL:   return "local";
     default:            return s->addr;
     }
 }

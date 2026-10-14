@@ -38,7 +38,7 @@ typedef struct {
 /* Merge a sorted PortList into out (room for in->len). Returns the count. */
 size_t ports_summarize(const PortList *in, PortSummary *out);
 
-/* "network", "this pc", or the specific address. */
+/* "network", "local", or the specific address. */
 const char *port_reach_label(const PortSummary *s);
 
 /*
