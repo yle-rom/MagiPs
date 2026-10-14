@@ -26,8 +26,9 @@ Type "l" Sleep 1.2s
 Type "l" Sleep 1.2s
 Type "l" Sleep 1.8s
 
-# stop the forgotten API server
+# what is that forgotten API server? then stop it from the info panel
 Type "j" Sleep 900ms
+Type "i" Sleep 3.5s
 Type "d" Sleep 1.5s
 Type "y" Sleep 2.5s
 
