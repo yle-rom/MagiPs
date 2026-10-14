@@ -2,7 +2,7 @@
 
 **What's running on my machine, and how do I stop it?** One command, no noise.
 
-`htop` and `btop` show you 500 processes. magips shows the ~30 things you actually care about: your apps, the services under the hood, forgotten dev servers, databases, containers and open ports. Each one has the right way to stop it built in.
+`htop` and `btop` show you 500 processes. magips shows the ~30 things you actually care about: your apps, the services under the hood, forgotten dev servers, databases, containers and open ports. Press `i` to see what something is before you stop it; each one has the right way to stop it built in.
 
 ![magips demo](docs/demo.gif)
 
@@ -50,10 +50,36 @@ magips --no-color   # plain output (NO_COLOR=1 works too)
 | `h` / `l` | previous / next section |
 | `g` / `G` | top / bottom |
 | `/` | search: type to filter, `Enter` keeps the filter, `Esc` clears it |
+| `i` / `Enter` | what is this? (see below); `d` from there stops it, `Esc` goes back |
 | `d` | stop the selected thing (asks first) |
 | `q` | quit |
 
 Arrows, `Tab`/`Shift-Tab` and `Ctrl-n`/`Ctrl-p` work too.
+
+### What is that thing?
+
+`i` shows what you'd otherwise dig out with `ps`, `systemctl` and `docker inspect`, before you stop it:
+
+```
+docker  system service
+  unit      docker.service — Docker Application Container Engine
+  file      /usr/lib/systemd/system/docker.service
+  on boot   disabled
+  command   /usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock
+  started   1d16h ago by systemd (PID 1)
+  procs     1: dockerd  (106M)
+
+  status    systemctl status docker
+  logs      journalctl -u docker -e
+  stop      sudo systemctl stop docker
+  for good  sudo systemctl disable --now docker
+```
+
+- **every process:** full command, program, working folder, who started it, how long ago, its processes and memory, and the ports it listens on
+- **systemd units:** description, unit file, and whether it starts on boot
+- **containers:** image, state, published ports, the compose file it came from, and its restart policy
+- **ports:** which addresses it's bound to, and who owns it
+- **commands:** to check its status, read its logs, and stop it yourself; each is the same thing magips would do
 
 ### What "stop" does
 
@@ -63,7 +89,7 @@ Arrows, `Tab`/`Shift-Tab` and `Ctrl-n`/`Ctrl-p` work too.
 | a container | runs `docker stop <name>` |
 | a systemd user unit (pipewire, syncthing…) | runs `systemctl --user stop <unit>` |
 | a system service (docker, postgresql…) | **prints** `sudo systemctl stop <unit>` for you to run, since killing it would just make systemd restart it |
-| a port or a database | stops whatever runs it |
+| a port or a database | stops whatever runs it (for a dev server's port: just the dev server, not its terminal) |
 
 Before each signal, magips re-checks the process's start time, so a PID that Linux has since given to a different program is never hit. If the group contains the terminal you're typing in, the confirmation says so.
 
@@ -107,6 +133,7 @@ Everything comes from files Linux already exposes. magips doesn't need root and 
 - **Ports:** `/proc/net/tcp{,6}`, matched to processes through the socket inodes in `/proc/<pid>/fd`.
 - **Databases:** by process name, container image, or (marked with `?`) a standard port.
 - **Containers:** `docker ps`.
+- **Info panel (`i`):** the same `/proc` data, plus `systemctl show` for a unit's description and boot state and `docker inspect` for a container's compose file and restart policy, asked for only when you open it.
 
 ## Limits
 
@@ -138,6 +165,7 @@ With `MAGIPS_PROC` pointing at a fake `/proc` (as in tests and the demo), magips
 | `src/world.c` | one scan: everything above, in order |
 | `src/report.c`, `report_json.c` | tables and JSON |
 | `src/picker.c`, `actions.c` | the interactive picker and stopping things |
+| `src/info.c` | the info panel: what something is, and the commands to check or stop it |
 | `src/config.c` | the config file |
 
 ## License

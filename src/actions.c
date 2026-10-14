@@ -1,4 +1,5 @@
 #include "actions.h"
+#include "info.h"
 #include "picker.h"
 #include <errno.h>
 #include <signal.h>
@@ -9,6 +10,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#define MAX_KILL_PIDS 6              // info panel: list this many pids in a kill command, at most
 #define TERM_WAIT_MS 3000           // how long to wait after SIGTERM before offering SIGKILL
 
 enum {
@@ -16,6 +18,15 @@ enum {
 };
 static const char *const tabs[NTABS] = {
     "All", "Apps", "Services", "Dev", "Databases", "Containers", "Ports",
+};
+static const char *const heads[NTABS][PICK_COLS] = {
+    [TAB_ALL]        = { "NAME", "KIND", "PID", "INFO", "DETAIL" },
+    [TAB_APPS]       = { "APP", NULL, "PID", "PROCS", "MEM" },
+    [TAB_SERVICES]   = { "SERVICE", "SCOPE", "PID", "PROCS", "MEM" },
+    [TAB_DEV]        = { "PROJECT", NULL, "PID", "PORT", "COMMAND" },
+    [TAB_DATABASES]  = { "DATABASE", NULL, "PID", "PORT", "WHERE" },
+    [TAB_CONTAINERS] = { "CONTAINER", NULL, "PID", "STATUS", "IMAGE" },
+    [TAB_PORTS]      = { "PORT", NULL, "PID", "OPEN TO", "OWNER" },
 };
 
 typedef enum {
@@ -33,20 +44,31 @@ typedef struct {
     const char *note;               // ACT_SHOW: why we don't do it ourselves
 } Action;
 
+/* What a menu item is, so its info panel can be built when asked for. */
+typedef struct {
+    int tab;                        // TAB_APPS...: which list idx points into
+    size_t idx;
+    PortSummary port;               // TAB_PORTS: the port itself
+} Ref;
+
 typedef struct {
     PickItem *items;
     Action *acts;
-    size_t len, cap, acts_cap;
+    Ref *refs;
+    size_t len, cap, acts_cap, refs_cap;
 } Menu;
 
-static void menu_add(Arena *a, Menu *m, PickItem item, Action act)
+static void menu_add(Arena *a, Menu *m, PickItem item, Action act, Ref ref)
 {
     if (m->len == m->cap)
         m->items = arena_grow(a, m->items, m->len, &m->cap, sizeof *m->items);
     if (m->len == m->acts_cap)
         m->acts = arena_grow(a, m->acts, m->len, &m->acts_cap, sizeof *m->acts);
+    if (m->len == m->refs_cap)
+        m->refs = arena_grow(a, m->refs, m->len, &m->refs_cap, sizeof *m->refs);
     m->items[m->len] = item;
     m->acts[m->len] = act;
+    m->refs[m->len] = ref;
     m->len++;
 }
 
@@ -94,10 +116,24 @@ static Action service_action(Arena *a, const Service *s)
 }
 
 /* A port is stopped by stopping whatever owns it. false = owner unknown. */
+static Action dev_action(Arena *a, const DevServer *d)
+{
+    return (Action){ .kind = ACT_KILL, .what = arena_printf(a, "%s in %s", d->command, d->project),
+                     .members = &d->members };
+}
+
 static bool port_action(Arena *a, const World *s, const PortSummary *p, Action *out,
                         const char **owner)
 {
     if (p->pid >= 0) {
+        // dev servers first: one in a terminal is also part of that terminal's app,
+        // and stopping the port shouldn't close the whole window
+        for (size_t i = 0; i < s->devservers.len; i++)
+            if (members_has(&s->devservers.items[i].members, p->pid)) {
+                *out = dev_action(a, &s->devservers.items[i]);
+                *owner = arena_printf(a, "dev: %s", s->devservers.items[i].command);
+                return true;
+            }
         for (size_t i = 0; i < s->apps.len; i++)
             if (members_has(&s->apps.items[i].members, p->pid)) {
                 *out = app_action(&s->apps.items[i]);
@@ -141,52 +177,50 @@ static Menu build_menu(Arena *a, const World *s)
 
     for (size_t i = 0; i < s->apps.len; i++) {
         const App *app = &s->apps.items[i];
-        PickItem item = { TAB_APPS, { app->name, "app", arena_printf(a, "%d", app->pid),
+        PickItem item = { TAB_APPS, "app", { app->name, NULL, arena_printf(a, "%d", app->pid),
                           arena_printf(a, "%3zu procs", app->members.len),
                           format_mem(a, app->mem_kb) },
-                          { STYLE_BOLD, STYLE_DIM, NULL, NULL, mem_style(app->mem_kb) } };
-        menu_add(a, &m, item, app_action(app));
+                          { STYLE_BOLD, NULL, NULL, NULL, mem_style(app->mem_kb) } };
+        menu_add(a, &m, item, app_action(app), (Ref){ TAB_APPS, i, { 0 } });
     }
     for (size_t i = 0; i < s->services.len; i++) {
         const Service *sv = &s->services.items[i];
-        PickItem item = { TAB_SERVICES, { sv->name, sv->scope == SCOPE_SYSTEM ? "system" : "user",
+        PickItem item = { TAB_SERVICES, "service", { sv->name, sv->scope == SCOPE_SYSTEM ? "system" : "user",
                           arena_printf(a, "%d", sv->pid),
                           arena_printf(a, "%3zu procs", sv->members.len),
                           format_mem(a, sv->mem_kb) },
                           { STYLE_BOLD, sv->scope == SCOPE_SYSTEM ? STYLE_INFO : STYLE_DIM, NULL,
                             NULL, mem_style(sv->mem_kb) } };
-        menu_add(a, &m, item, service_action(a, sv));
+        menu_add(a, &m, item, service_action(a, sv), (Ref){ TAB_SERVICES, i, { 0 } });
     }
     for (size_t i = 0; i < s->devservers.len; i++) {
         const DevServer *d = &s->devservers.items[i];
-        PickItem item = { TAB_DEV, { d->project, d->orphaned ? "dev, orphaned" : "dev",
+        PickItem item = { TAB_DEV, d->orphaned ? "dev, orphaned" : "dev", { d->project, NULL,
                           arena_printf(a, "%d", d->pid), arena_printf(a, ":%s", d->ports),
                           d->command },
-                          { STYLE_BOLD, d->orphaned ? STYLE_WARN : STYLE_DIM, NULL, NULL, NULL } };
-        Action act = { .kind = ACT_KILL, .what = arena_printf(a, "%s in %s", d->command, d->project),
-                       .members = &d->members };
-        menu_add(a, &m, item, act);
+                          { d->orphaned ? STYLE_WARN : STYLE_BOLD, NULL, NULL, NULL, NULL } };
+        menu_add(a, &m, item, dev_action(a, d), (Ref){ TAB_DEV, i, { 0 } });
     }
     for (size_t i = 0; i < s->databases.len; i++) {
         const Database *d = &s->databases.items[i];
         const char *where = d->container >= 0 ? s->containers.items[d->container].name
                             : d->service      ? d->service->name
                                               : "process";
-        PickItem item = { TAB_DATABASES, {
-            d->guessed ? arena_printf(a, "%s?", d->engine) : d->engine, "database",
+        PickItem item = { TAB_DATABASES, "database", {
+            d->guessed ? arena_printf(a, "%s?", d->engine) : d->engine, NULL,
             d->pid >= 0 ? arena_printf(a, "%d", d->pid) : "-",
             !d->port ? "" : d->port_internal ? arena_printf(a, ":%d internal", d->port)
                                              : arena_printf(a, ":%d", d->port),
             where },
-            { d->guessed ? STYLE_WARN : STYLE_BOLD, STYLE_DIM, NULL, NULL, NULL } };
-        menu_add(a, &m, item, db_action(a, s, d));
+            { d->guessed ? STYLE_WARN : STYLE_BOLD, NULL, NULL, NULL, NULL } };
+        menu_add(a, &m, item, db_action(a, s, d), (Ref){ TAB_DATABASES, i, { 0 } });
     }
     for (size_t i = 0; i < s->containers.len; i++) {
         const Container *c = &s->containers.items[i];
         bool trouble = strstr(c->status, "unhealthy") || strstr(c->status, "Restarting");
-        PickItem item = { TAB_CONTAINERS, { c->name, "container", "-", c->status, c->image },
-                          { STYLE_BOLD, STYLE_DIM, NULL, trouble ? STYLE_BAD : STYLE_GOOD, NULL } };
-        menu_add(a, &m, item, container_action(a, c));
+        PickItem item = { TAB_CONTAINERS, "container", { c->name, NULL, "-", c->status, c->image },
+                          { STYLE_BOLD, NULL, NULL, trouble ? STYLE_BAD : STYLE_GOOD, NULL } };
+        menu_add(a, &m, item, container_action(a, c), (Ref){ TAB_CONTAINERS, i, { 0 } });
     }
 
     PortSummary *sums = arena_alloc(a, (s->ports.len + 1) * sizeof *sums);
@@ -196,12 +230,12 @@ static Menu build_menu(Arena *a, const World *s)
         const char *owner;
         if (!port_action(a, s, &sums[i], &act, &owner))
             continue;                               // system plumbing: not listed
-        PickItem item = { TAB_PORTS, { arena_printf(a, ":%d", sums[i].port), "port",
+        PickItem item = { TAB_PORTS, "port", { arena_printf(a, ":%d", sums[i].port), NULL,
                           sums[i].pid >= 0 ? arena_printf(a, "%d", sums[i].pid) : "-",
                           port_reach_label(&sums[i]), owner },
-                          { STYLE_BOLD, STYLE_DIM, NULL,
+                          { STYLE_BOLD, NULL, NULL,
                             sums[i].reach == REACH_NETWORK ? STYLE_WARN : NULL, NULL } };
-        menu_add(a, &m, item, act);
+        menu_add(a, &m, item, act, (Ref){ TAB_PORTS, i, sums[i] });
     }
     return m;
 }
@@ -322,10 +356,61 @@ static int do_run(const Action *act)
     return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
 }
 
+/* The command that does what stopping act does, for the info panel. */
+static const char *stop_text(Arena *a, const World *s, const Action *act)
+{
+    if (act->kind == ACT_RUN)
+        return act->command;
+    if (act->kind == ACT_SHOW)
+        return arena_printf(a, "%s   (%s)", act->command, act->note);
+    const Members *m = act->members;
+    if (m->len == 0)
+        return NULL;
+    if (m->len > MAX_KILL_PIDS) {                   // too many to list: let pstree find them
+        int top = m->items[0].pid;
+        for (size_t i = 0; i < m->len; i++) {       // the one whose parent isn't in the group
+            size_t t = tree_find(&s->tree, m->items[i].pid);
+            if (t != TREE_NONE && !members_has(m, s->procs.items[t].ppid)) {
+                top = m->items[i].pid;
+                break;
+            }
+        }
+        return arena_printf(a, "kill $(pstree -p %d | grep -o '([0-9]*)' | tr -d '()')   "
+                               "(%zu processes)", top, m->len);
+    }
+    const char *pids = "";
+    for (size_t i = 0; i < m->len; i++)
+        pids = arena_printf(a, "%s %d", pids, m->items[i].pid);
+    return arena_printf(a, "kill%s", pids);
+}
+
+typedef struct {
+    Arena *a;
+    const World *s;
+    const Menu *m;
+} InfoCtx;
+
+static const char *describe(void *ctx, size_t i)
+{
+    const InfoCtx *c = ctx;
+    const World *s = c->s;
+    const Ref *r = &c->m->refs[i];
+    const char *stop = stop_text(c->a, s, &c->m->acts[i]);
+    switch (r->tab) {
+    case TAB_APPS:       return info_app(c->a, s, &s->apps.items[r->idx], stop);
+    case TAB_SERVICES:   return info_service(c->a, s, &s->services.items[r->idx], stop);
+    case TAB_DEV:        return info_dev(c->a, s, &s->devservers.items[r->idx], stop);
+    case TAB_DATABASES:  return info_database(c->a, s, &s->databases.items[r->idx], stop);
+    case TAB_CONTAINERS: return info_container(c->a, s, &s->containers.items[r->idx], stop);
+    default:             return info_port(c->a, s, &r->port, stop);
+    }
+}
+
 PickResult actions_pick(Arena *a, const World *s, int *tab)
 {
     Menu m = build_menu(a, s);
-    int choice = picker_run(m.items, m.len, tabs, NTABS, tab);
+    InfoCtx ctx = { a, s, &m };
+    int choice = picker_run(m.items, m.len, tabs, heads, NTABS, tab, describe, &ctx);
     if (choice < 0)
         return PICK_QUIT;                           // Esc
     const Action *act = &m.acts[choice];

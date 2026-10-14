@@ -22,6 +22,7 @@
 #define CELL_END    CSI "22;39m"    // end a cell's color but keep the line's background
 #define SEL_BG      CSI "48;5;236m" // selected line: dark grey background (256-color)
 #define TAB_ON      CSI "1;30;46m"  // selected section: black on cyan, like the titles
+#define HEAD        CSI "2;36m"     // column headers: faded cyan, quieter than the section bar
 
 #define MAX_VISIBLE 12
 #define MAX_QUERY   64
@@ -233,7 +234,7 @@ static void fit_widths(const size_t *natural, size_t *out, size_t term)
     size_t total = prefix + min_last;
     for (int c = 0; c < PICK_COLS; c++) {
         out[c] = natural[c];
-        if (c < PICK_COLS - 1)
+        if (c < PICK_COLS - 1 && natural[c])        // hidden columns take no gap either
             total += natural[c] + gap;
     }
     if (total > term && out[0] > min_name) {
@@ -246,8 +247,8 @@ typedef struct {
     const PickItem *items;
     size_t n;
     const char *const *tabs;
+    const char *const (*heads)[PICK_COLS];
     int ntabs;
-    size_t width[PICK_COLS];        // natural column widths over all items
 
     int tab;
     bool searching;                 // after '/': keys type into the filter
@@ -277,7 +278,7 @@ static void refilter(Picker *p)
         const PickItem *it = &p->items[i];
         if (p->tab != 0 && it->tab != p->tab)
             continue;
-        bool hit = false;
+        bool hit = it->kind && contains_ci(it->kind, p->query);
         for (int c = 0; c < PICK_COLS && !hit; c++)
             hit = it->cols[c] && contains_ci(it->cols[c], p->query);
         if (hit)
@@ -285,6 +286,12 @@ static void refilter(Picker *p)
     }
     p->sel = 0;
     p->scroll = 0;
+}
+
+/* What column c of an item shows in the current tab. */
+static const char *cell_text(const Picker *p, const PickItem *it, int c)
+{
+    return p->tab == 0 && c == 1 ? it->kind : it->cols[c];
 }
 
 static void draw(Picker *p)
@@ -318,19 +325,56 @@ static void draw(Picker *p)
     if (p->sel >= p->scroll + visible)
         p->scroll = p->sel - visible + 1;
 
-    size_t width[PICK_COLS];
-    fit_widths(p->width, width, max);
+    // natural widths over this section's items (not just the filtered ones, so search
+    // doesn't make columns jump); a NULL header hides that column in this section
+    const char *const *heads = p->heads[p->tab];
+    size_t natural[PICK_COLS], width[PICK_COLS];
+    for (int c = 0; c < PICK_COLS; c++)
+        natural[c] = heads[c] ? text_width(heads[c]) : 0;
+    for (size_t i = 0; i < p->n; i++) {
+        const PickItem *it = &p->items[i];
+        if (p->tab != 0 && it->tab != p->tab)
+            continue;
+        for (int c = 0; c < PICK_COLS; c++) {
+            const char *cell = cell_text(p, it, c);
+            size_t w = heads[c] && cell ? text_width(cell) : 0;
+            if (w > natural[c])
+                natural[c] = w;
+        }
+    }
+    fit_widths(natural, width, max);
 
     char row[2048];
+    if (p->nshown) {                                // column headers for this section
+        size_t len = 0;
+        row[0] = '\0';
+        for (int c = 0; c < PICK_COLS; c++) {
+            const char *head = heads[c];
+            if (!head)
+                continue;
+            bool last = c == PICK_COLS - 1;
+            len = put_cell(row, len, sizeof row, head, last ? text_width(head) : width[c]);
+            if (!last)
+                len = put_cell(row, len, sizeof row, "", 2);        // gap
+        }
+        fputs(color ? "  " HEAD : "  " DIM, stdout);
+        put_cut(row, max - 2);
+        fputs(RESET "\n", stdout);
+        lines++;
+    }
     for (size_t v = 0; v < visible; v++) {
         const PickItem *it = &p->items[p->shown[p->scroll + v]];
         bool selected = p->scroll + v == p->sel;
         size_t len = 0;
         row[0] = '\0';
         for (int c = 0; c < PICK_COLS; c++) {
-            const char *cell = it->cols[c] ? it->cols[c] : "";
+            if (!heads[c])
+                continue;
+            const char *cell = cell_text(p, it, c);
             bool last = c == PICK_COLS - 1;
-            const char *style = color ? it->style[c] : NULL;
+            const char *style = !color ? NULL : p->tab == 0 && c == 1 ? STYLE_DIM : it->style[c];
+            if (!cell)
+                cell = "";
             if (style)
                 len += (size_t)snprintf(row + len, sizeof row - len, CSI "%sm", style);
             len = put_cell(row, len, sizeof row, cell, last ? text_width(cell) : width[c]);
@@ -356,11 +400,54 @@ static void draw(Picker *p)
     }
     printf(DIM "  %zu/%zu  %s" RESET, p->nshown, p->n,
            p->searching ? "type to filter  enter keep  esc clear"
-                        : "j/k move  h/l section  / search  d stop  q quit");
+                        : "j/k move  h/l section  / search  i info  d stop  q quit");
     lines++;
 
     fflush(stdout);
     p->drawn = lines;
+}
+
+/* Screen rows text takes at cols columns: its lines, plus wraps; escapes take no room. */
+static int screen_rows(const char *s, size_t cols)
+{
+    int rows = 1;
+    size_t col = 0;
+    for (; *s; s++) {
+        if (*s == '\x1b' && s[1] == '[') {
+            while (s[1] && !((s[1] >= 'A' && s[1] <= 'Z') || (s[1] >= 'a' && s[1] <= 'z')))
+                s++;
+            if (s[1])
+                s++;
+        } else if (*s == '\n') {
+            rows++;
+            col = 0;
+        } else if (((unsigned char)*s & 0xC0) != 0x80 && ++col > cols) {
+            rows++;
+            col = 1;
+        }
+    }
+    return rows;
+}
+
+/*
+ * Show an item's description in place of the picker until d or Esc.
+ * Erases it again and returns that key, so the picker comes back as it was.
+ */
+static int show_info(const char *text)
+{
+    const char *hint = DIM "  d stop  Esc back" RESET;
+    fputs(text, stdout);
+    fputs(hint, stdout);
+    fflush(stdout);
+    int rows = screen_rows(text, (size_t)term_width()) + screen_rows(hint, (size_t)term_width()) - 1;
+    int key;
+    while ((key = read_key()) != 'd' && key != KEY_ESC)
+        ;                                           // other keys do nothing here
+    if (rows > 1)
+        printf(CSI "%dA", rows - 1);
+    printf("\r" CLEAR_DOWN);
+    fflush(stdout);
+    return key;
 }
 
 static void erase(const Picker *p)
@@ -371,7 +458,9 @@ static void erase(const Picker *p)
     fflush(stdout);
 }
 
-int picker_run(const PickItem *items, size_t n, const char *const *tabs, int ntabs, int *tab)
+int picker_run(const PickItem *items, size_t n, const char *const *tabs,
+               const char *const (*heads)[PICK_COLS], int ntabs, int *tab,
+               PickDescribe describe, void *ctx)
 {
     if (!raw_enable())
         return -1;
@@ -381,14 +470,8 @@ int picker_run(const PickItem *items, size_t n, const char *const *tabs, int nta
         raw_disable();
         return -1;
     }
-    Picker p = { .items = items, .n = n, .tabs = tabs, .ntabs = ntabs, .shown = shown,
-                 .tab = *tab >= 0 && *tab < ntabs ? *tab : 0 };
-    for (size_t i = 0; i < n; i++)
-        for (int c = 0; c < PICK_COLS; c++) {
-            size_t w = items[i].cols[c] ? text_width(items[i].cols[c]) : 0;
-            if (w > p.width[c])
-                p.width[c] = w;
-        }
+    Picker p = { .items = items, .n = n, .tabs = tabs, .heads = heads, .ntabs = ntabs,
+                 .shown = shown, .tab = *tab >= 0 && *tab < ntabs ? *tab : 0 };
 
     fputs(HIDE_CURSOR, stdout);
     refilter(&p);
@@ -451,6 +534,14 @@ int picker_run(const PickItem *items, size_t n, const char *const *tabs, int nta
             p.sel = p.nshown ? p.nshown - 1 : 0;
         } else if (key == '/') {
             p.searching = true;
+        } else if ((key == 'i' || key == KEY_ENTER) && describe && p.nshown > 0) {
+            size_t item = p.shown[p.sel];           // i = what is this?
+            erase(&p);
+            p.drawn = 0;
+            if (show_info(describe(ctx, item)) == 'd') {
+                result = (int)item;                 // looked, now stop it
+                break;
+            }
         } else if (key == 'd') {                   // d = stop the selected thing
             if (p.nshown > 0) {
                 result = (int)p.shown[p.sel];

@@ -37,6 +37,9 @@ void world_scan(Arena *a, World *w);
 /* Seconds since a process started (start in clock ticks since boot). */
 long world_age(unsigned long long start, double uptime);
 
+/* The same as text: "2d4h", "3h12m", "22m", "40s". */
+const char *world_age_text(Arena *a, unsigned long long start, double uptime);
+
 /* Who owns a port: the process if we can see it, else a container publishing it, else NULL. */
 const char *world_port_owner(Arena *a, const World *w, const PortSummary *p);
 

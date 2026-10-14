@@ -3,20 +3,6 @@
 #include <string.h>
 #include "table.h"
 
-/* How long ago a process started: "2d4h", "3h12m", "22m", "40s". */
-static const char *format_age(Arena *a, unsigned long long start, double uptime)
-{
-    long secs = world_age(start, uptime);
-    long m = secs / 60, h = m / 60, d = h / 24;
-    if (d)
-        return arena_printf(a, "%ldd%ldh", d, h % 24);
-    if (h)
-        return arena_printf(a, "%ldh%02ldm", h, m % 60);
-    if (m)
-        return arena_printf(a, "%ldm", m);
-    return arena_printf(a, "%lds", secs < 0 ? 0 : secs);
-}
-
 static const char *paint_mem(Arena *a, long kb)
 {
     const char *style = mem_style(kb);
@@ -34,7 +20,7 @@ static void print_apps(Arena *a, const AppList *apps, double uptime)
             arena_printf(a, "%d", app->pid),
             arena_printf(a, "%zu", app->members.len),
             paint_mem(a, app->mem_kb),
-            format_age(a, app->start, uptime),
+            world_age_text(a, app->start, uptime),
         };
         table_row(t, row);
     }
@@ -53,7 +39,7 @@ static void print_services(Arena *a, const ServiceList *services, double uptime)
             arena_printf(a, "%d", s->pid),
             arena_printf(a, "%zu", s->members.len),
             paint_mem(a, s->mem_kb),
-            format_age(a, s->start, uptime),
+            world_age_text(a, s->start, uptime),
         };
         table_row(t, row);
     }
@@ -103,7 +89,7 @@ static void print_devservers(Arena *a, const DevServerList *devs, double uptime)
             d->command,
             d->ports,
             arena_printf(a, "%d", d->pid),
-            format_age(a, d->start, uptime),
+            world_age_text(a, d->start, uptime),
             d->orphaned ? paint(a, STYLE_WARN, "orphaned") : "",
         };
         table_row(t, row);

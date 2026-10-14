@@ -42,6 +42,19 @@ long world_age(unsigned long long start, double uptime)
     return secs < 0 ? 0 : secs;
 }
 
+const char *world_age_text(Arena *a, unsigned long long start, double uptime)
+{
+    long secs = world_age(start, uptime);
+    long m = secs / 60, h = m / 60, d = h / 24;
+    if (d)
+        return arena_printf(a, "%ldd%ldh", d, h % 24);
+    if (h)
+        return arena_printf(a, "%ldh%02ldm", h, m % 60);
+    if (m)
+        return arena_printf(a, "%ldm", m);
+    return arena_printf(a, "%lds", secs);
+}
+
 const char *world_port_owner(Arena *a, const World *w, const PortSummary *p)
 {
     if (p->pid >= 0) {
